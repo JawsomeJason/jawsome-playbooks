@@ -511,6 +511,39 @@ test('check records the pstack it used in a new layers.json that has no pstack y
   assert.equal(readLayers(w.config).pstack, '1.9.0');
 });
 
+// A pstack plugin folder named like a clone's plugins/pstack, whose name is no version.
+function namedPstack(w, manifests) {
+  const dir = join(w.root, 'clone', 'plugins', 'pstack');
+  cpSync(PSTACK, dir, { recursive: true });
+  for (const [path, content] of Object.entries(manifests)) {
+    mkdirSync(join(dir, path, '..'), { recursive: true });
+    writeFileSync(join(dir, path), JSON.stringify(content));
+  }
+  return dir;
+}
+
+test('a pstack folder whose name is no version takes its version from the plugin manifest', () => {
+  for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json', '.muse-plugin/plugin.json', 'package.json']) {
+    const w = world();
+    const env = { JSTACK_PSTACK_DIR: namedPstack(w, { [manifest]: { name: 'pstack', version: '2.3.4' } }) };
+    assert.match(w.run(['playbook', 'list'], { env }).stdout, /^web \(acme-eng · pstack 2\.3\.4\)$/m, manifest);
+    assert.match(w.run(['check'], { env }).stdout, /^check passed: pstack 2\.3\.4$/m, manifest);
+    assert.equal(readLayers(w.config).pstack, '2.3.4', manifest);
+  }
+});
+
+test('a pstack with no version anywhere is named by its path and never recorded', () => {
+  const w = world();
+  const dir = namedPstack(w, { '.claude-plugin/plugin.json': { name: 'pstack' } });
+  const env = { JSTACK_PSTACK_DIR: dir };
+  assert.match(w.run(['playbook', 'list'], { env }).stdout, new RegExp(`^web \\(acme-eng · pstack ${dir}\\)$`, 'm'));
+  const r = w.run(['check'], { env });
+  assert.match(r.stdout, new RegExp(`^check passed: pstack ${dir}$`, 'm'));
+  assert.equal(r.status, 0);
+  assert.equal(readLayers(w.config).pstack, '1.0.0');
+  assert.equal(JSON.parse(w.run(['check', '--json'], { env }).stdout).pstack, null);
+});
+
 test('no pstack found is a usage error that names the variable to set', () => {
   const r = world().run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
   assert.match(r.stderr, /JSTACK_PSTACK_DIR/);
