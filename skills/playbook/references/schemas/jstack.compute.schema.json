@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "jstack playbook compute --json",
+  "description": "One playbook after every layer's edits are applied in cascade order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["playbook", "repo", "owner", "org", "pstack", "steps", "notes", "overrides", "problems", "pstackCheck"],
+  "$defs": {
+    "layer": { "type": "string", "enum": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"] },
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "line", "message"],
+      "properties": {
+        "path": { "type": "string", "description": "Team files read through a checkout are relative to its root (.agents/playbooks/<file>); every other path is absolute." },
+        "line": { "type": "integer", "minimum": 1 },
+        "message": { "type": "string" }
+      }
+    },
+    "pstackCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "lines"],
+      "properties": {
+        "status": { "enum": ["ok", "failed", "skipped"], "description": "skipped when the repo has no .agents/playbooks or it holds a broken link." },
+        "lines": { "type": "array", "items": { "type": "string" }, "description": "pstack's check-playbooks.mjs output, verbatim, or the reason it did not run." }
+      }
+    }
+  },
+  "properties": {
+    "playbook": { "type": "string" },
+    "repo": { "type": ["string", "null"], "description": "Repo key: the name part of the origin remote, or the --repo value. null outside a repo." },
+    "owner": { "type": ["string", "null"], "description": "Owner part of the origin remote. null when unknown." },
+    "org": { "type": ["string", "null"], "description": "The layers.json orgs entry that owns the repo. null when none does." },
+    "pstack": { "type": "string", "description": "pstack version the bundled playbooks came from." },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "origin", "touched"],
+        "properties": {
+          "text": { "type": "string", "description": "The step with every edit applied and replaced text removed. Step N is index N-1." },
+          "origin": { "oneOf": [{ "const": "pstack" }, { "$ref": "#/$defs/layer" }], "description": "The layer that created the step." },
+          "touched": { "type": "array", "items": { "$ref": "#/$defs/layer" }, "description": "Layers that edited the step with In or Replace, in cascade order." }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "layer"],
+        "properties": { "text": { "type": "string" }, "layer": { "$ref": "#/$defs/layer" } }
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "description": "Each In or Replace by a layer later in the cascade than the step's origin.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step", "layer", "verb", "quote", "origin"],
+        "properties": {
+          "step": { "type": "integer", "minimum": 1 },
+          "layer": { "$ref": "#/$defs/layer" },
+          "verb": { "enum": ["In", "Replace"] },
+          "quote": { "type": "string" },
+          "origin": { "oneOf": [{ "const": "pstack" }, { "$ref": "#/$defs/layer" }] },
+          "over": { "$ref": "#/$defs/layer", "description": "A lower layer whose Replace of the same words this one supersedes." }
+        }
+      }
+    },
+    "problems": { "type": "array", "items": { "$ref": "#/$defs/problem" }, "description": "Validator findings in files that target this playbook, plus every broken link." },
+    "pstackCheck": { "$ref": "#/$defs/pstackCheck" }
+  }
+}
