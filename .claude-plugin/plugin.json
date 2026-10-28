@@ -1,0 +1,10 @@
+{
+  "name": "jstack",
+  "description": "Layers personal and team playbooks over pstack's poteto-mode playbooks in a fixed cascade, and validates them against each pstack release.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jason Featheringham",
+    "email": "jason@jawsomejason.com"
+  },
+  "license": "MIT"
+}

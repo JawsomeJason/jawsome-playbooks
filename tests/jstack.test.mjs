@@ -1,0 +1,384 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { test } from 'node:test';
+import { BIN, FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs';
+
+const OK_LINE = "Every project playbook matches this pstack's playbooks.";
+const readLayers = (config) => JSON.parse(readFileSync(join(config, 'layers.json'), 'utf8'));
+const setPstack = (config, version) => {
+  const layers = readLayers(config);
+  writeFileSync(join(config, 'layers.json'), JSON.stringify({ ...layers, pstack: version }, null, 2) + '\n');
+};
+
+const BABYSIT = `# babysit (web · acme-eng · pstack 1.0.0)
+
+1. Check the team's merge calendar. Skip it on hotfix branches.   [org.standard ~ repo.overrides]
+2. **Declare the mode before any poll.** Pick drive or background for the PR.   [pstack]
+3. **Work the merge frontier.** The lowest open PR matters first.   [pstack]
+4. Read ~~the default branch's ruleset~~ the trunk ruleset before the first push.   [user ~ org.overrides]
+5. **Order is conflicts, then threads, then CI.** Batch fixes into one push.   [pstack ~ org.standard]
+
+   On a conflict, report it and stop. Snapshot diffs count as CI.
+6. **Stop at the human's line.** ~~Babysitting never authorizes merging~~ Merge once approved and green.   [pstack ~ user]
+
+Notes:
+- Ping the author when the frontier is merge-ready.   [user]
+
+Overrides:
+- step 1: repo.overrides added to "Check the team's merge calendar" (org.standard)
+- step 4: org.overrides replaced "the default branch's ruleset" (user)
+- step 5: org.standard added to "Order is conflicts, then threads, then CI" (pstack)
+- step 6: user replaced "Babysitting never authorizes merging" (pstack)
+
+pstack check-playbooks:
+ok
+`;
+
+test('compute layers every verb in cascade order and tags each step with its provenance', () => {
+  const w = world();
+  const r = w.run(['playbook', 'compute', 'babysit']);
+  assert.equal(r.stderr, '');
+  assert.equal(r.stdout, BABYSIT);
+  assert.equal(r.status, 0);
+});
+
+test('compute --json carries the same cascade as data', () => {
+  const w = world();
+  const r = w.run(['playbook', 'compute', 'babysit', '--json']);
+  assert.equal(r.status, 0);
+  assert.deepEqual(JSON.parse(r.stdout), {
+    playbook: 'babysit',
+    repo: 'web',
+    owner: 'acme-eng',
+    org: 'acme',
+    pstack: '1.0.0',
+    steps: [
+      { text: "Check the team's merge calendar. Skip it on hotfix branches.", origin: 'org.standard', touched: ['repo.overrides'] },
+      { text: '**Declare the mode before any poll.** Pick drive or background for the PR.', origin: 'pstack', touched: [] },
+      { text: '**Work the merge frontier.** The lowest open PR matters first.', origin: 'pstack', touched: [] },
+      { text: 'Read the trunk ruleset before the first push.', origin: 'user', touched: ['org.overrides'] },
+      {
+        text: '**Order is conflicts, then threads, then CI.** Batch fixes into one push.\n\n   On a conflict, report it and stop. Snapshot diffs count as CI.',
+        origin: 'pstack',
+        touched: ['org.standard'],
+      },
+      { text: "**Stop at the human's line.** Merge once approved and green.", origin: 'pstack', touched: ['user'] },
+    ],
+    notes: [{ text: 'Ping the author when the frontier is merge-ready.', layer: 'user' }],
+    overrides: [
+      { step: 1, layer: 'repo.overrides', verb: 'In', quote: "Check the team's merge calendar", origin: 'org.standard' },
+      { step: 4, layer: 'org.overrides', verb: 'Replace', quote: "the default branch's ruleset", origin: 'user' },
+      { step: 5, layer: 'org.standard', verb: 'In', quote: 'Order is conflicts, then threads, then CI', origin: 'pstack' },
+      { step: 6, layer: 'user', verb: 'Replace', quote: 'Babysitting never authorizes merging', origin: 'pstack' },
+    ],
+    problems: [],
+    pstackCheck: { status: 'ok', lines: [OK_LINE] },
+  });
+});
+
+test('a playbook with no numbered steps takes each bold-lead paragraph as a step', () => {
+  const r = world().run(['playbook', 'compute', 'opening-a-pr']);
+  assert.equal(r.stdout, `# opening-a-pr (web · acme-eng · pstack 1.0.0)
+
+1. **Commits.** Commit in small units.   [pstack]
+2. Sign every commit.   [user]
+3. **Titles.** Use a typed subject line.   [pstack ~ user]
+Keep it short. Name the scope.
+4. **Readiness.** Open every PR ready.   [pstack]
+
+Overrides:
+- step 3: user added to "Keep it short." (pstack)
+
+pstack check-playbooks:
+ok
+`);
+  assert.equal(r.status, 0);
+});
+
+test('higher personal layers edit a standalone playbook by stem, anchored on its cascaded steps', () => {
+  const r = world().run(['playbook', 'compute', 'triage']);
+  assert.equal(r.stdout, `# triage (web · acme-eng · pstack 1.0.0)
+
+1. Reproduce the bug.   [user]
+2. ~~Capture the logs~~ Capture the server logs.   [org.overrides ~ repo.overrides]
+3. Write the failing test.   [user]
+
+Overrides:
+- step 2: repo.overrides replaced "Capture the logs" (org.overrides)
+
+pstack check-playbooks:
+ok
+`);
+  assert.equal(r.status, 0);
+});
+
+test('a standalone team playbook starts from its own numbered steps', () => {
+  const r = world().run(['playbook', 'compute', 'web-release']);
+  assert.equal(r.stdout, `# web-release (web · acme-eng · pstack 1.0.0)
+
+1. Tag the release.   [repo.standard]
+2. Post the tag in the team channel.   [repo.overrides]
+3. Watch the deploy.   [repo.standard]
+
+pstack check-playbooks:
+ok
+`);
+  assert.equal(r.status, 0);
+});
+
+test('a team Replace on pstack text wins over a lower layer that replaced the same words', () => {
+  const team = readFileSync(join(FIXTURES, 'config/orgs/acme/standard/babysit.md'), 'utf8');
+  const w = world({
+    files: { 'orgs/acme/standard/babysit.md': team + '- **Replace** "Babysitting never authorizes merging" Hand it to the release captain\n' },
+  });
+  const r = w.run(['playbook', 'compute', 'babysit', '--json']);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.steps[5], {
+    text: "**Stop at the human's line.** Hand it to the release captain.",
+    origin: 'pstack',
+    touched: ['user', 'org.standard'],
+  });
+  assert.deepEqual(
+    out.overrides.filter((o) => o.step === 6),
+    [
+      { step: 6, layer: 'user', verb: 'Replace', quote: 'Babysitting never authorizes merging', origin: 'pstack' },
+      { step: 6, layer: 'org.standard', verb: 'Replace', quote: 'Babysitting never authorizes merging', origin: 'pstack', over: 'user' },
+    ],
+  );
+  const md = w.run(['playbook', 'compute', 'babysit']).stdout;
+  assert.match(md, /^6\. \*\*Stop at the human's line\.\*\* ~~Babysitting never authorizes merging~~ ~~Merge once approved and green~~ Hand it to the release captain\. {3}\[pstack ~ user ~ org\.standard\]$/m);
+  assert.match(md, /^- step 6: org\.standard replaced "Babysitting never authorizes merging" \(pstack, over user\)$/m);
+});
+
+test('with no config the cascade is pstack alone', () => {
+  const w = world({ checkout: false });
+  const r = w.run(['playbook', 'compute', 'feature'], { env: { JSTACK_CONFIG: join(w.root, 'missing') } });
+  assert.equal(r.stdout, `# feature (pstack 1.0.0)
+
+1. Name the data shape.   [pstack]
+2. Delegate the code.   [pstack]
+3. Verify on the real surface.   [pstack]
+
+pstack check-playbooks:
+not run: no .agents/playbooks
+`);
+  assert.equal(r.status, 0);
+});
+
+test('list shows which layer defines or edits each playbook', () => {
+  const r = world().run(['playbook', 'list']);
+  assert.equal(r.stdout, `web (acme-eng · pstack 1.0.0)
+playbook      source    user  org.std  org.ovr  repo.std  repo.ovr
+babysit       pstack     +       +        +        ·         +
+feature       pstack     ·       ·        ·        ·         ·
+opening-a-pr  pstack     +       ·        ·        ·         ·
+triage        user       ●       ·        +        ·         +
+web-release   repo.std   ·       ·        ·        ●         +
+● defines  + edits  · untouched
+`);
+  assert.equal(r.status, 0);
+});
+
+test('list --json names each cell', () => {
+  const out = JSON.parse(world().run(['playbook', 'list', '--json']).stdout);
+  assert.deepEqual(out.layers, ['user', 'org.standard', 'org.overrides', 'repo.standard', 'repo.overrides']);
+  assert.deepEqual(out.playbooks.find((p) => p.name === 'web-release'), {
+    name: 'web-release',
+    source: 'repo.standard',
+    layers: { user: 'none', 'org.standard': 'none', 'org.overrides': 'none', 'repo.standard': 'defines', 'repo.overrides': 'edits' },
+  });
+});
+
+test('check passes a clean config, passes pstack lines through and lists proposed team rules', () => {
+  const r = world().run(['check']);
+  assert.equal(r.stdout, `${OK_LINE}
+proposed: .agents/playbooks/babysit.md:5
+check passed: pstack 1.0.0
+`);
+  assert.equal(r.status, 0);
+});
+
+const BROKEN = {
+  files: {
+    'user/broken.md': `---
+extends: babysit, nope
+---
+
+- **In** "PR" more words.
+- **Replace** "stays out of every step" x
+- **After** "no such words" y
+`,
+    'user/solo.md': `---
+when: a solo flow
+---
+
+1. Do the thing.
+- **After** "Do the thing" again
+`,
+    'repos/web/team/bad-team.md': `---
+extends: babysit
+when: a bad team rule
+layer: repo.standard
+---
+
+- **In** "the trunk ruleset" z
+`,
+    'repos/web/team/triage.md': `---
+when: triaging in web
+layer: repo.standard
+source: ruleset
+---
+
+- **In** "Reproduce the bug." x
+`,
+  },
+  links: { 'user/gone.md': '../nowhere.md' },
+};
+
+test('check reports every validator rule with path and line', () => {
+  const w = world(BROKEN);
+  const r = w.run(['check']);
+  const c = w.config;
+  assert.deepEqual(lines(r.stdout).sort(), [
+    OK_LINE,
+    `${c}/user/broken.md:1: missing when:`,
+    `${c}/user/broken.md:2: extends nope, which pstack 1.0.0 has no playbook for`,
+    `${c}/user/broken.md:5: quote matches steps 1 and 2; make it longer`,
+    `${c}/user/broken.md:6: quote is outside a numbered step`,
+    `${c}/user/broken.md:7: quote not found: "no such words"`,
+    `${c}/user/gone.md:1: broken link -> ../nowhere.md`,
+    `${c}/user/solo.md:6: standalone playbook cannot carry edits`,
+    '.agents/playbooks/bad-team.md:1: team file needs layer: and source:',
+    '.agents/playbooks/bad-team.md:7: team files may quote pstack only',
+    '.agents/playbooks/triage.md:7: team files may quote pstack only',
+    'check failed: 10 problems against pstack 1.0.0',
+    'proposed: .agents/playbooks/babysit.md:5',
+  ].sort());
+  assert.equal(r.status, 1);
+});
+
+test('check flags layers that layers.json does not declare', () => {
+  const w = world();
+  const layers = readLayers(w.config);
+  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...layers, layers: ['user', 'team', 'org.standard', 'org.overrides', 'repo.overrides'] }));
+  const r = w.run(['check']);
+  assert.ok(lines(r.stdout).includes(`${w.config}/layers.json:1: unknown layer team`), r.stdout);
+  assert.ok(lines(r.stdout).includes('.agents/playbooks/web-release.md:4: unknown layer repo.standard'), r.stdout);
+  assert.equal(r.status, 1);
+});
+
+test('compute still prints the cascade when its files have problems, and exits 1', () => {
+  const w = world(BROKEN);
+  const r = w.run(['playbook', 'compute', 'babysit']);
+  assert.match(r.stdout, /^# babysit \(web · acme-eng · pstack 1\.0\.0\)$/m);
+  assert.match(r.stdout, /^Problems:$/m);
+  assert.ok(r.stdout.includes(`${w.config}/user/broken.md:5: quote matches steps 1 and 2; make it longer`), r.stdout);
+  assert.ok(r.stdout.includes(`${w.config}/user/gone.md:1: broken link -> ../nowhere.md`), r.stdout);
+  assert.ok(!r.stdout.includes('solo.md'), 'problems in files that target other playbooks stay out');
+  assert.equal(r.status, 1);
+});
+
+test('a dangling link in .agents/playbooks is reported, not a crash, and skips pstack\'s checker', () => {
+  const w = world({ links: { 'repos/web/team/stale.md': '../../../orgs/acme/standard/gone.md' } });
+  const r = w.run(['playbook', 'compute', 'babysit']);
+  assert.ok(r.stdout.includes('.agents/playbooks/stale.md:1: broken link -> ../../../orgs/acme/standard/gone.md'), r.stdout);
+  assert.match(r.stdout, /pstack check-playbooks:\nnot run: broken link in \.agents\/playbooks\n$/);
+  assert.match(r.stdout, /^1\. Check the team's merge calendar\./m);
+  assert.equal(r.status, 1);
+});
+
+test('a new pstack version that passes check is recorded in layers.json', () => {
+  const w = world();
+  setPstack(w.config, '0.9.0');
+  const r = w.run(['playbook', 'compute', 'babysit']);
+  assert.equal(r.stdout, BABYSIT);
+  assert.equal(r.status, 0);
+  const layers = readLayers(w.config);
+  assert.equal(layers.pstack, '1.0.0');
+  assert.deepEqual(layers.orgs, { acme: { owners: ['acme-eng'] } });
+});
+
+test('a new pstack version that fails check stops compute and records nothing', () => {
+  const w = world(BROKEN);
+  setPstack(w.config, '0.9.0');
+  const r = w.run(['playbook', 'compute', 'babysit']);
+  assert.ok(!r.stdout.includes('# babysit'), r.stdout);
+  assert.ok((r.stdout + r.stderr).includes(`${w.config}/user/broken.md:7: quote not found: "no such words"`));
+  assert.equal(r.status, 1);
+  assert.equal(readLayers(w.config).pstack, '0.9.0');
+});
+
+test('check --pstack checks another installed version by name or path without writing', () => {
+  for (const pick of ['1.1.0', join(FIXTURES, 'pstack', '1.1.0')]) {
+    const w = world();
+    const r = w.run(['check', '--pstack', pick]);
+    const out = lines(r.stdout + r.stderr);
+    assert.ok(out.includes(`${w.config}/user/babysit.md:6: quote not found: "Babysitting never authorizes merging"`), r.stdout);
+    assert.ok(out.includes('.agents/playbooks/babysit.md:9: quote not found: "Order is conflicts, then threads, then CI"'), r.stdout);
+    assert.ok(out.includes('.agents/playbooks/babysit.md: "Order is conflicts, then threads, then CI" is not in any playbook it extends'), 'pstack 1.1.0 checker lines pass through');
+    assert.equal(r.status, 1);
+    assert.equal(readLayers(w.config).pstack, '1.0.0');
+  }
+});
+
+test('--repo outside a checkout reads team files from the config and infers the org from their links', () => {
+  const w = world();
+  const r = w.run(['playbook', 'compute', 'babysit', '--repo', 'web'], { cwd: w.outside });
+  const body = (s) => s.slice(s.indexOf('\n1. '), s.indexOf('\npstack check-playbooks:'));
+  assert.match(r.stdout, /^# babysit \(web · acme · pstack 1\.0\.0\)$/m);
+  assert.equal(body(r.stdout), body(BABYSIT));
+  assert.equal(r.status, 0);
+});
+
+test('a worktree resolves to its main checkout', () => {
+  const w = world();
+  const tree = join(w.root, 'web-tree');
+  git(w.repo, ['worktree', 'add', '-q', tree, '-b', 'side']);
+  const r = w.run(['playbook', 'compute', 'babysit'], { cwd: tree });
+  assert.equal(r.stdout, BABYSIT);
+});
+
+test('an https remote resolves owner and repo too', () => {
+  const r = world({ remote: 'https://example.com/acme-eng/web.git' }).run(['playbook', 'compute', 'babysit']);
+  assert.equal(r.stdout, BABYSIT);
+});
+
+test('without JSTACK_PSTACK_DIR the newest pstack under a home plugin cache wins by semver', () => {
+  const w = world();
+  const cache = join(w.home, '.someharness', 'plugins', 'cache', 'market', 'pstack');
+  mkdirSync(cache, { recursive: true });
+  symlinkSync(join(FIXTURES, 'pstack', '1.0.0'), join(cache, '1.9.0'));
+  symlinkSync(join(FIXTURES, 'pstack', '1.1.0'), join(cache, '1.10.0'));
+  const r = w.run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
+  assert.match(r.stdout, /^web \(acme-eng · pstack 1\.10\.0\)$/m);
+  assert.equal(r.status, 0);
+});
+
+test('no pstack found is a usage error that names the variable to set', () => {
+  const r = world().run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
+  assert.match(r.stderr, /JSTACK_PSTACK_DIR/);
+  assert.equal(r.status, 2);
+});
+
+test('an unknown playbook and a bad command are usage errors', () => {
+  const w = world();
+  const unknown = w.run(['playbook', 'compute', 'nope']);
+  assert.match(unknown.stderr, /no playbook named nope/);
+  assert.equal(unknown.status, 2);
+  const bad = w.run(['frobnicate']);
+  assert.match(bad.stderr, /usage: jstack/);
+  assert.equal(bad.status, 2);
+  const help = w.run(['--help']);
+  assert.match(help.stdout, /usage: jstack/);
+  assert.equal(help.status, 0);
+});
+
+test('bin/jstack runs through a symlink placed on PATH', () => {
+  const dir = tempDir();
+  symlinkSync(BIN, join(dir, 'jstack'));
+  const r = spawnSync(join(dir, 'jstack'), ['--help'], { encoding: 'utf8', env: { ...process.env, JSTACK_PSTACK_DIR: PSTACK } });
+  assert.match(r.stdout, /usage: jstack/);
+  assert.equal(r.status, 0);
+});
