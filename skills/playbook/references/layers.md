@@ -2,7 +2,7 @@
 
 ## Config dir
 
-The config dir is `$JSTACK_CONFIG`, or `.jstack` in the home directory. It is private to one user, so it can hold company rules that a public repo cannot.
+The config dir is `$JSTACK_CONFIG`, or `.jstack` in the home directory. It belongs to one user. Org layers are optional. With no `orgs` entry, or in a repo no org owns, the cascade is user, repo.standard and repo.overrides.
 
 ```
 <config>/

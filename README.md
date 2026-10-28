@@ -105,7 +105,7 @@ Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the confi
 
 | Variable | Default |
 | --- | --- |
-| `JSTACK_CONFIG` | `$HOME/.jstack`. Keep it private: it can hold company rules. |
+| `JSTACK_CONFIG` | `$HOME/.jstack`. Keep it private if it holds anything you would not publish. |
 | `JSTACK_PSTACK_DIR` | The pstack an install record names, else the highest version under `$HOME/.*/plugins/cache/*/pstack/<version>/`. |
 
 ## Develop
