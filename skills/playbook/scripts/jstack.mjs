@@ -14,8 +14,6 @@ class UsageError extends Error {
   }
 }
 
-// ---- Domain tables -------------------------------------------------------------------------------------------
-
 const LAYERS = {
   user: { label: 'user', team: false, dir: (c) => join(c.configDir, 'user') },
   'org.standard': { label: 'org.std', team: true },
@@ -39,8 +37,6 @@ const FAILURES = {
 };
 
 const CELLS = { defines: '●', edits: '+', none: '·' };
-
-// ---- Playbook text -------------------------------------------------------------------------------------------
 
 const isBlank = (line) => line.trim() === '';
 const andList = (items) => (items.length < 2 ? String(items[0]) : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
@@ -140,8 +136,6 @@ function parseLayerText(raw) {
   return { front, hasFront, edits, notes, malformed, body: body.join('\n') };
 }
 
-// ---- Steps as segments ---------------------------------------------------------------------------------------
-
 let groups = 0;
 const segment = (text, layer, extra = {}) => ({ text, layer, struck: false, base: false, group: ++groups, replaces: new Set(), ...extra });
 const newStep = (text, origin) => ({ origin, touched: [], overrides: [], segments: [segment(text, origin, { base: true })] });
@@ -213,8 +207,6 @@ const VERBS = {
   },
   Replace: { edits: true, apply: (pb, step, edit, layer) => replaceSpan(step, edit, layer) },
 };
-
-// ---- Cascade -------------------------------------------------------------------------------------------------
 
 const makePlaybook = (name, origin, parsed) => {
   const steps = parsed.steps.map((t) => newStep(t, origin));
@@ -298,24 +290,9 @@ function computed(pb, order) {
   };
 }
 
-// ---- Boundary: config, repo, pstack --------------------------------------------------------------------------
-
-const lexists = (path) => {
-  try {
-    lstatSync(path);
-    return true;
-  } catch {
-    return false;
-  }
-};
+const lexists = (path) => lstatSync(path, { throwIfNoEntry: false }) !== undefined;
 const isDir = (path) => statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
-const isFile = (path) => {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-};
+const isFile = (path) => statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
 const listDir = (dir) => {
   try {
     return readdirSync(dir).sort();
@@ -468,8 +445,6 @@ function loadContext(opts) {
   return { configDir, settings, order, configProblems, pstack, repo, pinned: Boolean(opts.pstack) };
 }
 
-// ---- Boundary: layer files -----------------------------------------------------------------------------------
-
 function readLayerFile(path, displayPath, layer, team, pstackVersion) {
   const parsed = parseLayerText(readFileSync(path, 'utf8'));
   const { front } = parsed;
@@ -583,10 +558,14 @@ function analyze(ctx, { pstackCheck }) {
 
 const fileProblems = (files) => files.flatMap((f) => [...f.problems].sort((a, b) => a.line - b.line).map((p) => ({ path: f.display, ...p })));
 
-// ---- Commands ------------------------------------------------------------------------------------------------
-
 const needsRecord = (ctx) => !ctx.pinned && ctx.settings && ctx.settings.pstack !== ctx.pstack.version;
-const record = (ctx) => writeFileSync(ctx.settings.path, `${JSON.stringify({ ...ctx.settings.raw, pstack: ctx.pstack.version }, null, 2)}\n`);
+// Swaps only the version text, so the user's own formatting of layers.json survives.
+function record(ctx) {
+  const text = readFileSync(ctx.settings.path, 'utf8');
+  const value = JSON.stringify(ctx.pstack.version);
+  const swapped = text.replace(/("pstack"\s*:\s*)"[^"]*"/, (_, key) => key + value);
+  writeFileSync(ctx.settings.path, swapped !== text || ctx.settings.raw.pstack === ctx.pstack.version ? swapped : `${JSON.stringify({ ...ctx.settings.raw, pstack: ctx.pstack.version }, null, 2)}\n`);
+}
 
 function checkReport(ctx, analysis) {
   const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems([...analysis.files.active, ...analysis.files.inactive])];
@@ -603,7 +582,9 @@ function renderCheck(report) {
     ...(report.pstackCheck.status === 'skipped' ? [] : report.pstackCheck.lines),
     ...report.problems.map(problemLine),
     ...report.proposed.map((p) => `proposed: ${p.path}:${p.line}`),
-    report.passed ? `check passed: pstack ${report.pstack}` : `check failed: ${n} ${n === 1 ? 'problem' : 'problems'} against pstack ${report.pstack}`,
+    report.passed
+      ? `check passed: pstack ${report.pstack}`
+      : `check failed: ${n ? `${n} ${n === 1 ? 'problem' : 'problems'}` : "pstack's checker failed"} against pstack ${report.pstack}`,
   ].join('\n');
 }
 

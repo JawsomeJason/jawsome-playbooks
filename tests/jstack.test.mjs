@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { BIN, FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs';
@@ -8,8 +8,8 @@ import { BIN, FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs
 const OK_LINE = "Every project playbook matches this pstack's playbooks.";
 const readLayers = (config) => JSON.parse(readFileSync(join(config, 'layers.json'), 'utf8'));
 const setPstack = (config, version) => {
-  const layers = readLayers(config);
-  writeFileSync(join(config, 'layers.json'), JSON.stringify({ ...layers, pstack: version }, null, 2) + '\n');
+  const path = join(config, 'layers.json');
+  writeFileSync(path, readFileSync(path, 'utf8').replace('"pstack": "1.0.0"', `"pstack": "${version}"`));
 };
 
 const BABYSIT = `# babysit (web · acme-eng · pstack 1.0.0)
@@ -259,6 +259,16 @@ test('check reports every validator rule with path and line', () => {
   assert.equal(r.status, 1);
 });
 
+test('a pstack checker failure with no jstack problems says so in the last line', () => {
+  const w = world();
+  const pstack = join(w.root, '1.0.0');
+  cpSync(PSTACK, pstack, { recursive: true });
+  cpSync(join(FIXTURES, 'pstack/1.1.0/skills/poteto-mode/scripts'), join(pstack, 'skills/poteto-mode/scripts'), { recursive: true });
+  const r = w.run(['check'], { env: { JSTACK_PSTACK_DIR: pstack } });
+  assert.equal(lines(r.stdout).at(-1), "check failed: pstack's checker failed against pstack 1.0.0");
+  assert.equal(r.status, 1);
+});
+
 test('check flags layers that layers.json does not declare', () => {
   const w = world();
   const layers = readLayers(w.config);
@@ -295,9 +305,11 @@ test('a new pstack version that passes check is recorded in layers.json', () => 
   const r = w.run(['playbook', 'compute', 'babysit']);
   assert.equal(r.stdout, BABYSIT);
   assert.equal(r.status, 0);
-  const layers = readLayers(w.config);
-  assert.equal(layers.pstack, '1.0.0');
-  assert.deepEqual(layers.orgs, { acme: { owners: ['acme-eng'] } });
+  assert.equal(
+    readFileSync(join(w.config, 'layers.json'), 'utf8'),
+    readFileSync(join(FIXTURES, 'config/layers.json'), 'utf8'),
+    'only the pstack value changes, so the user\'s formatting survives',
+  );
 });
 
 test('a new pstack version that fails check stops compute and records nothing', () => {
