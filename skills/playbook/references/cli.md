@@ -23,7 +23,13 @@ The script is `scripts/jstack.mjs` in this skill. It needs Node and nothing else
 | `JSTACK_CONFIG` | Config dir. Default `.jstack` in the home directory. |
 | `JSTACK_PSTACK_DIR` | The pstack plugin folder, the one that holds `skills/poteto-mode/`. |
 
-Without `JSTACK_PSTACK_DIR`, jstack looks in every dot-folder of the home directory for `plugins/cache/*/pstack/<version>/` and takes the highest version by semver. That layout is how plugin caches store versioned plugins, so the search finds pstack without naming any one harness. Set the variable when pstack lives anywhere else.
+jstack picks the pstack folder in this order, and uses the first one that holds poteto-mode's playbooks:
+
+1. `JSTACK_PSTACK_DIR`.
+2. The install record. jstack reads `plugins/installed_plugins.json` in every dot-folder of the home directory and takes the `installPath` of each `pstack@<marketplace>` entry that has no `projectPath`. When several qualify, the highest version by semver wins. A harness loads the version its record names, and its cache keeps older and newer versions next to it, so the record is what keeps jstack on the pstack the session runs.
+3. The cache. jstack looks in every dot-folder of the home directory for `plugins/cache/*/pstack/<version>/` and takes the highest version by semver.
+
+Both searches use the layout plugin harnesses share, so they find pstack without naming any one harness. Set the variable when pstack lives anywhere else.
 
 `--pstack` takes a folder, or a version installed next to the one in use. It never writes `layers.json`, so you can preview an upgrade.
 

@@ -491,12 +491,41 @@ const bySemverDesc = (a, b) => {
   return 0;
 };
 
+const pstackAt = (dir) => ({ dir: resolve(dir), version: basename(resolve(dir)) });
+
+const pluginDirs = () => {
+  const home = homedir();
+  return listDir(home).filter((e) => e.startsWith('.')).map((dot) => join(home, dot, 'plugins'));
+};
+
+/**
+ * The pstack a harness loads, per the install record next to its plugin cache. The cache keeps old versions
+ * after an upgrade, so the newest cached one is not always the one running.
+ */
+function installedPstack() {
+  const found = [];
+  for (const plugins of pluginDirs()) {
+    let record;
+    try {
+      record = JSON.parse(readFileSync(join(plugins, 'installed_plugins.json'), 'utf8'));
+    } catch {
+      continue;
+    }
+    for (const [key, installs] of Object.entries(record?.plugins ?? {})) {
+      if (!key.startsWith('pstack@') || !Array.isArray(installs)) continue;
+      for (const { installPath, projectPath } of installs) {
+        if (typeof installPath === 'string' && !projectPath && isDir(join(installPath, PLAYBOOKS))) found.push(pstackAt(installPath));
+      }
+    }
+  }
+  return found.sort(bySemverDesc)[0] ?? null;
+}
+
 /** Every pstack under a dot-directory plugin cache in the home dir, highest version first. */
 function discoverPstacks() {
-  const home = homedir();
   const found = [];
-  for (const dot of listDir(home).filter((e) => e.startsWith('.'))) {
-    const cache = join(home, dot, 'plugins', 'cache');
+  for (const plugins of pluginDirs()) {
+    const cache = join(plugins, 'cache');
     for (const market of listDir(cache)) {
       const base = join(cache, market, 'pstack');
       for (const version of listDir(base).filter((v) => /^\d+\.\d+/.test(v))) {
@@ -507,11 +536,9 @@ function discoverPstacks() {
   return found.sort(bySemverDesc);
 }
 
-const pstackAt = (dir) => ({ dir: resolve(dir), version: basename(resolve(dir)) });
-
 function resolvePstack(flag) {
   const envDir = process.env.JSTACK_PSTACK_DIR;
-  const base = envDir ? pstackAt(envDir) : (discoverPstacks()[0] ?? null);
+  const base = envDir ? pstackAt(envDir) : (installedPstack() ?? discoverPstacks()[0] ?? null);
   let pick = base;
   if (flag) {
     const sibling = base && join(dirname(base.dir), flag);
