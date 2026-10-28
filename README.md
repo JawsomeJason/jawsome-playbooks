@@ -32,16 +32,16 @@ Use pstack-claude's own steps for your harness, which its README keeps up to dat
 Claude Code installs it as a plugin, at user scope so it works in every repo:
 
 ```sh
-claude plugin marketplace add JawsomeJason/jawsome-agents
-claude plugin install jstack@jawsome-agents -s user
+claude plugin marketplace add JawsomeJason/jstack
+claude plugin install jstack@jstack -s user
 ```
 
-Update with `claude plugin update jstack@jawsome-agents`, and update pstack the same way. Never copy a newer version into the plugin cache by hand. Claude Code loads the version its install record names, so a hand copy runs nowhere, and jstack-cli reads that same record to pick pstack.
+Update with `claude plugin update jstack@jstack`, and update pstack the same way. Never copy a newer version into the plugin cache by hand. Claude Code loads the version its install record names, so a hand copy runs nowhere, and jstack-cli reads that same record to pick pstack.
 
 Every other harness installs the two skills with the skills CLI, which asks which harnesses to link them into:
 
 ```sh
-npx skills add JawsomeJason/jawsome-agents --skill playbook --skill setup
+npx skills add JawsomeJason/jstack --skill playbook --skill setup
 ```
 
 ### 3. Put jstack-cli on PATH
@@ -51,10 +51,10 @@ The command is `jstack-cli`, not `jstack`, because Java development kits install
 For Claude Code, link from the marketplace clone, which plugin updates refresh:
 
 ```sh
-ln -s "$HOME/.claude/plugins/marketplaces/jawsome-agents/plugins/jstack/bin/jstack-cli" "$HOME/.local/bin/jstack-cli"
+ln -s "$HOME/.claude/plugins/marketplaces/jstack/bin/jstack-cli" "$HOME/.local/bin/jstack-cli"
 ```
 
-For a skills CLI install, link `scripts/jstack.mjs` inside the installed `playbook` skill folder, or `plugins/jstack/bin/jstack-cli` in a clone of this repo.
+For a skills CLI install, link `scripts/jstack.mjs` inside the installed `playbook` skill folder, or `bin/jstack-cli` in a clone of this repo.
 
 ### 4. Point jstack-cli at pstack
 
@@ -81,7 +81,7 @@ Run the `setup` skill (`/jstack:setup` in Claude Code). It writes your `<handle>
 ## Develop
 
 ```sh
-node --test 'plugins/jstack/tests/*.test.mjs'
+node --test 'tests/*.test.mjs'
 ```
 
 The tests run the CLI against a fake pstack in `tests/fixtures/pstack/` and a config world in `tests/fixtures/config/` that uses every edit verb in every layer.
