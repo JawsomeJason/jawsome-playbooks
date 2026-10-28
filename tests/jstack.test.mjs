@@ -464,6 +464,53 @@ test('without JSTACK_PSTACK_DIR the newest pstack under a home plugin cache wins
   assert.equal(r.status, 0);
 });
 
+// A home with pstack 1.9.0 and 1.10.0 in a plugin cache, and an install record that names `recorded` as the active one.
+function cachedHome(recorded) {
+  const w = world();
+  const harness = join(w.home, '.someharness', 'plugins');
+  const cache = join(harness, 'cache', 'market', 'pstack');
+  mkdirSync(cache, { recursive: true });
+  symlinkSync(join(FIXTURES, 'pstack', '1.0.0'), join(cache, '1.9.0'));
+  symlinkSync(join(FIXTURES, 'pstack', '1.1.0'), join(cache, '1.10.0'));
+  const record = {
+    version: 2,
+    plugins: {
+      'other@market': [{ scope: 'user', installPath: join(harness, 'cache', 'market', 'other', '9.9.9'), version: '9.9.9' }],
+      'pstack@market': [{ scope: 'user', installPath: join(cache, recorded), version: recorded }],
+    },
+  };
+  writeFileSync(join(harness, 'installed_plugins.json'), JSON.stringify(record));
+  return w;
+}
+
+test('without JSTACK_PSTACK_DIR the install record picks the active pstack over a newer cached one', () => {
+  const r = cachedHome('1.9.0').run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
+  assert.match(r.stdout, /^web \(acme-eng · pstack 1\.9\.0\)$/m);
+  assert.equal(r.status, 0);
+});
+
+test('an install record whose folder is gone falls back to the newest cached pstack', () => {
+  const r = cachedHome('1.8.0').run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
+  assert.match(r.stdout, /^web \(acme-eng · pstack 1\.10\.0\)$/m);
+  assert.equal(r.status, 0);
+});
+
+test('JSTACK_PSTACK_DIR wins over the install record', () => {
+  const r = cachedHome('1.9.0').run(['playbook', 'list']);
+  assert.match(r.stdout, /^web \(acme-eng · pstack 1\.0\.0\)$/m);
+  assert.equal(r.status, 0);
+});
+
+test('check records the pstack it used in a new layers.json that has no pstack yet', () => {
+  const w = cachedHome('1.9.0');
+  const path = join(w.config, 'layers.json');
+  const { pstack, ...rest } = readLayers(w.config);
+  writeFileSync(path, JSON.stringify(rest));
+  const r = w.run(['check'], { env: { JSTACK_PSTACK_DIR: '' } });
+  assert.match(r.stdout, /check passed: pstack 1\.9\.0$/m);
+  assert.equal(readLayers(w.config).pstack, '1.9.0');
+});
+
 test('no pstack found is a usage error that names the variable to set', () => {
   const r = world().run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
   assert.match(r.stderr, /JSTACK_PSTACK_DIR/);
