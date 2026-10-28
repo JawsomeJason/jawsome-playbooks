@@ -114,4 +114,15 @@ Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the confi
 node --test 'tests/*.test.mjs'
 ```
 
-The tests run the CLI against a fake pstack in `tests/fixtures/pstack/` and a config world in `tests/fixtures/config/` that uses every edit verb in every layer.
+The tests run the CLI against a fake pstack in `tests/fixtures/pstack/` and a config world in `tests/fixtures/config/` that uses every edit verb in every layer. [CONTRIBUTING.md](CONTRIBUTING.md) lists the other checks and the rules for changes.
+
+## Credits
+
+jstack runs on top of two projects:
+
+- [pstack](https://github.com/cursor/plugins/tree/main/pstack) by Lauren Tan (Poteto), which provides the playbooks and poteto-mode.
+- [pstack-claude](https://github.com/michael-denyer/pstack-claude) by Michael Denyer, which makes it possible for repos to add their own playbooks.
+
+jstack doesn't copy pstack's playbooks. It reads them from your install and adds your edits on top.
+
+The test fixtures use a few short excerpts of pstack-claude's playbooks, under the MIT license. See [NOTICE](NOTICE).
