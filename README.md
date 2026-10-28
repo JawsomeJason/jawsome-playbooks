@@ -1,26 +1,26 @@
 # jstack
 
-jstack layers your personal and team playbooks over pstack's bundled poteto-mode playbooks, in a fixed order where later layers win, like CSS cascade layers. It prints each playbook with every layer applied, tags each step with the layer that wrote it, and names every override, so an agent runs one list and you can see whose rule changed what.
+jstack layers your personal and team playbooks over pstack's bundled poteto-mode playbooks. The layers apply in a fixed order, and a later layer wins, as in CSS cascade layers. `jstack-cli` prints each playbook with every layer applied, tags each step with the layer that wrote it, and lists every override. An agent runs one step list, and you see whose rule changed which step.
 
-It keeps pstack's playbook format and edit grammar, adds no verbs, and never pins a pstack version. When pstack upgrades, `jstack-cli check` tells you which quotes moved.
+jstack keeps pstack's playbook format and edit grammar, adds no verbs, and never pins a pstack version. After a pstack upgrade, `jstack-cli check` names each quote that no longer matches its step.
 
-## Pieces
+jstack ships two skills. The `playbook` skill runs `jstack-cli` for an agent. The `setup` skill writes your `<handle>-mode` skill, scaffolds the config dir, and links team folders into your repos. You can rerun `setup` at any time.
 
-- `jstack-cli`, a CLI in `skills/playbook/scripts/jstack.mjs`: `playbook list`, `playbook compute <name>` and `check`. Node standard library only.
-- The `playbook` skill runs the CLI for an agent. [Commands and flags](skills/playbook/references/cli.md), and [layers, file format and cascade](skills/playbook/references/layers.md).
-- The `setup` skill writes your `<handle>-mode` skill through pstack's automate-me, scaffolds the config dir, and links team folders into your repos. Rerun it any time.
+- The [jstack-cli reference](skills/playbook/references/cli.md) lists the commands, flags, exit codes, and environment variables.
+- [Layers, files, and the cascade](skills/playbook/references/layers.md) describes the config dir, the layer file format, and how layers apply.
+- [CONTRIBUTING.md](CONTRIBUTING.md) lists the checks and the rules for changes.
 
-## Install
+## Install and set up jstack
 
-jstack needs Node, git and [pstack-claude](https://github.com/michael-denyer/pstack-claude), Michael Denyer's port of pstack. Poteto's original pstack for Cursor does not work: project playbooks and `check-playbooks.mjs`, which jstack layers on and runs, exist only in the port.
+jstack needs Node, git, and [pstack-claude](https://github.com/michael-denyer/pstack-claude), Michael Denyer's port of pstack. Poteto's original pstack for Cursor does not work with jstack. Project playbooks and `check-playbooks.mjs` exist only in the port. jstack builds on project playbooks, and jstack-cli runs `check-playbooks.mjs`.
 
 Each step has one row per harness that pstack-claude supports, in the order its README lists them. `tests/readme-harnesses.test.mjs` fails when a step leaves one out.
 
-The **Checked** column says what was run. Claude Code, Codex, Pi and Muse were installed into a throwaway home directory from a local jstack checkout, with Claude Code 2.1.312, codex-cli 0.154.0, pi 0.85.1 and Muse Code 1.4.12. GitHub Copilot, OpenCode, Gemini CLI and Prime Agent are untested. Their rows follow pstack-claude's notes for each harness and have not been run with jstack. No harness has run the `setup` skill end to end.
+The **Checked** column says what someone ran. The Claude Code, Codex, Pi, and Muse rows come from installs into a throwaway home directory from a local jstack checkout, with Claude Code 2.1.312, codex-cli 0.154.0, pi 0.85.1, and Muse Code 1.4.12. GitHub Copilot, OpenCode, Gemini CLI, and Prime Agent are untested. Their rows follow pstack-claude's notes for each harness, and nobody has run them with jstack. No harness has run the `setup` skill end to end.
 
 ### 1. Install pstack-claude
 
-These are pstack-claude's own steps, which [its README](https://github.com/michael-denyer/pstack-claude#install) keeps up to date. GitHub Copilot, OpenCode, Gemini CLI and Prime Agent are untested.
+These are pstack-claude's own steps. The source for them is [the install section of pstack-claude's README](https://github.com/michael-denyer/pstack-claude#install). If a command here fails, follow that section instead.
 
 | Harness | Commands | Checked |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ These are pstack-claude's own steps, which [its README](https://github.com/micha
 
 ### 2. Install jstack
 
-Install at user scope where the harness asks, so jstack works in every repo. GitHub Copilot, OpenCode, Gemini CLI and Prime Agent are untested.
+If the harness asks for a scope, pick user scope, so jstack works in every repo.
 
 | Harness | Commands | Checked |
 | --- | --- | --- |
@@ -48,21 +48,23 @@ Install at user scope where the harness asks, so jstack works in every repo. Git
 | Gemini CLI | The same as OpenCode | Untested |
 | Prime Agent | The same as OpenCode | Untested |
 
-Update jstack and pstack with the harness's own update command, such as `claude plugin update jstack@jstack`. Never copy a newer version into a plugin cache by hand. The harness loads the version its install record names, so a hand copy runs nowhere, and jstack-cli reads that same record to pick pstack.
+To update jstack or pstack, use the harness's own update command, such as `claude plugin update jstack@jstack`. Do not copy a newer version into a plugin cache by hand. The harness loads the version its install record names, so the harness never runs a hand copy. jstack-cli reads the same record to pick pstack.
 
 ### 3. Put jstack-cli on PATH
 
-The command is `jstack-cli`, not `jstack`, because Java development kits install a `jstack` of their own, and macOS ships one at `/usr/bin/jstack`. Link the harness's copy of `bin/jstack-cli` into a folder on `PATH`:
+The command is `jstack-cli`, not `jstack`, because Java development kits install a `jstack` of their own, and macOS ships one at `/usr/bin/jstack`.
+
+Link the harness's copy of `bin/jstack-cli` into a folder on `PATH`:
 
 ```sh
 ln -s <path from the table> "$HOME/.local/bin/jstack-cli"
 ```
 
-Link from a folder that updates in place, not from a versioned cache folder that the next update leaves behind. GitHub Copilot, OpenCode, Gemini CLI and Prime Agent are untested.
+Link from a folder that updates in place. A link into a versioned cache folder keeps pointing at the old version after an update.
 
 | Harness | Path to link | Checked |
 | --- | --- | --- |
-| Claude Code | `$HOME/.claude/plugins/marketplaces/jstack/bin/jstack-cli`, the marketplace clone that plugin updates refresh | Yes, the link. A local-checkout install keeps no clone, so the path is the one pstack-claude's GitHub install uses on this machine. |
+| Claude Code | `$HOME/.claude/plugins/marketplaces/jstack/bin/jstack-cli`, the marketplace clone that plugin updates refresh | Yes, the link. A local-checkout install keeps no clone, so the path follows the layout of pstack-claude's GitHub install. |
 | Codex | `$HOME/.codex/.tmp/marketplaces/jstack/bin/jstack-cli`, the marketplace clone that `codex plugin marketplace upgrade` refreshes | Path seen for pstack-claude's GitHub marketplace. Codex's plugin cache is versioned, under `$HOME/.codex/plugins/cache/jstack/jstack/<version>/`. |
 | Pi | `$HOME/.pi/agent/git/github.com/JawsomeJason/jstack/bin/jstack-cli` | Path seen for pstack-claude's git install |
 | GitHub Copilot | `$HOME/.copilot/installed-plugins/jstack/jstack/bin/jstack-cli`, from the layout pstack-claude's Copilot smoke test checks | Untested |
@@ -73,12 +75,12 @@ Link from a folder that updates in place, not from a versioned cache folder that
 
 ### 4. Point jstack-cli at pstack
 
-jstack-cli finds pstack on its own where the harness keeps a plugin cache under a dot-folder of your home directory, and needs `JSTACK_PSTACK_DIR` everywhere else. The variable names the pstack plugin folder, the one that holds `skills/poteto-mode/`. [cli.md](skills/playbook/references/cli.md#environment) gives the full search order. GitHub Copilot, OpenCode, Gemini CLI and Prime Agent are untested.
+jstack-cli finds pstack without help when the harness keeps a plugin cache in a dot-folder of your home directory. For every other harness, set `JSTACK_PSTACK_DIR` to the pstack plugin folder, the one that holds `skills/poteto-mode/`. The [jstack-cli environment reference](skills/playbook/references/cli.md#environment) gives the full search order.
 
 | Harness | How jstack-cli finds pstack | Checked |
 | --- | --- | --- |
 | Claude Code | The install record, `$HOME/.claude/plugins/installed_plugins.json`, so it uses the version the session runs | Yes |
-| Codex | The highest version in `$HOME/.codex/plugins/cache/pstack-claude/pstack/`. Codex keeps no install record that jstack reads, so set the variable when an older version is the active one. | Yes |
+| Codex | The highest version in `$HOME/.codex/plugins/cache/pstack-claude/pstack/`. Codex keeps no install record that jstack-cli reads. If Codex runs an older version, set the variable. | Yes |
 | Pi | Set `JSTACK_PSTACK_DIR=$HOME/.pi/agent/git/github.com/michael-denyer/pstack-claude/plugins/pstack` | Yes |
 | GitHub Copilot | Set `JSTACK_PSTACK_DIR=$HOME/.copilot/installed-plugins/pstack-claude/pstack`, the folder pstack-claude's Copilot smoke test checks | Untested |
 | Muse | Set `JSTACK_PSTACK_DIR` to `plugins/pstack` in your pstack-claude clone. After a `git pull` there, run `muse plugins update pstack` so Muse loads the same version. | Yes |
@@ -88,7 +90,9 @@ jstack-cli finds pstack on its own where the harness keeps a plugin cache under 
 
 ### 5. Run setup
 
-Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the config dir, links team folders into your repos, and links the mode skill into the skill folders your harness loads. Start a new session afterwards, so the harness loads `/<handle>-mode`. Every row except Claude Code is untested.
+Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the config dir, links team folders into your repos, and links the mode skill into the skill folders your harness loads. The config dir is `$HOME/.jstack`, or `$JSTACK_CONFIG` when you set it. If it holds rules you would not publish, keep it private.
+
+After setup, start a new session, so the harness loads `/<handle>-mode`.
 
 | Harness | How to run it | Checked |
 | --- | --- | --- |
@@ -100,21 +104,6 @@ Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the confi
 | OpenCode | Ask the agent to run the `setup` skill by name. pstack-claude says these harnesses have no routing hook, so you name the skill. | Untested |
 | Gemini CLI | The same as OpenCode | Untested |
 | Prime Agent | The same as OpenCode | Untested |
-
-## Configure
-
-| Variable | Default |
-| --- | --- |
-| `JSTACK_CONFIG` | `$HOME/.jstack`. Keep it private if it holds anything you would not publish. |
-| `JSTACK_PSTACK_DIR` | The pstack an install record names, else the highest version under `$HOME/.*/plugins/cache/*/pstack/<version>/`. |
-
-## Develop
-
-```sh
-node --test 'tests/*.test.mjs'
-```
-
-The tests run the CLI against a fake pstack in `tests/fixtures/pstack/` and a config world in `tests/fixtures/config/` that uses every edit verb in every layer. [CONTRIBUTING.md](CONTRIBUTING.md) lists the other checks and the rules for changes.
 
 ## Credits
 
