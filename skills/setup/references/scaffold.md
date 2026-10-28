@@ -69,3 +69,22 @@ grep -qxF '/.agents/playbooks' "$EXCLUDE" 2>/dev/null || echo '/.agents/playbook
 ```
 
 The pattern has no trailing slash on purpose. git sees the link as a file, and a pattern ending in `/` matches only directories, so `/.agents/playbooks/` leaves the link showing in `git status`. When the repo tracks other files under `.agents/`, this line still hides only the link.
+
+## Mode skill
+
+List the user-level skill folders, the `skills` folder of each dot-folder in the home directory:
+
+```sh
+find -L "$HOME" -mindepth 2 -maxdepth 2 -path "$HOME/.*/skills" -type d 2>/dev/null
+```
+
+The search names no harness, so it finds the folder of any harness that keeps one there. `-L` counts a `skills` folder that is itself a link. A harness whose folder does not exist yet gets none, so the user types it.
+
+Link the mode skill into each folder the user picked, as `DIR`:
+
+```sh
+[ -e "$DIR/$HANDLE-mode" ] || [ -L "$DIR/$HANDLE-mode" ] || ln -s "$CONFIG/mode/$HANDLE-mode" "$DIR/$HANDLE-mode"
+readlink "$DIR/$HANDLE-mode"
+```
+
+When `readlink` prints anything other than `$CONFIG/mode/$HANDLE-mode`, stop and show the user what is there. It may be a mode skill they wrote by hand, and replacing it would delete their work. The link keeps one copy of the skill, so an automate-me revision reaches every harness at once.
