@@ -11,4 +11,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - run: git clone --depth 1 https://github.com/michael-denyer/pstack-claude "$RUNNER_TEMP/pstack-claude"
       - run: node --test 'tests/*.test.mjs'
+        env:
+          PSTACK_CLAUDE_README: ${{ runner.temp }}/pstack-claude/README.md
