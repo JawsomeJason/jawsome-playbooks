@@ -19,13 +19,12 @@ Create it only when it is missing:
 {
   "handle": "<handle>",
   "modeTrigger": "manual",
-  "pstack": "<installed pstack version>",
   "layers": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"],
   "orgs": { "<org>": { "owners": ["<forge owner>"] } }
 }
 ```
 
-`modeTrigger` is `manual`, `auto` or `session` for picks A, B and C. When the file exists, change only the keys whose answers changed, show the user the diff, and write it after they agree. Keep keys you do not recognize, because a later jstack may use them.
+`modeTrigger` is `manual`, `auto` or `session` for picks A, B and C. The file has no `pstack` key yet, because the first passing `jstack-cli check` writes the version it resolved. When the file exists, change only the keys whose answers changed, show the user the diff, and write it after they agree. Keep keys you do not recognize, because a later jstack may use them.
 
 ## Team folder for one repo
 
