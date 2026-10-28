@@ -4,9 +4,9 @@ import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpat
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 
-const USAGE = `usage: jstack playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack playbook compute <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack check [--repo <repo>] [--json] [--pstack <dir-or-version>]`;
+const USAGE = `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       jstack-cli playbook compute <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]`;
 
 class UsageError extends Error {
   constructor(message, { usage = false } = {}) {

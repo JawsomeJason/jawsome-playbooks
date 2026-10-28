@@ -476,17 +476,17 @@ test('an unknown playbook and a bad command are usage errors', () => {
   assert.match(unknown.stderr, /no playbook named nope/);
   assert.equal(unknown.status, 2);
   const bad = w.run(['frobnicate']);
-  assert.match(bad.stderr, /usage: jstack/);
+  assert.match(bad.stderr, /usage: jstack-cli/);
   assert.equal(bad.status, 2);
   const help = w.run(['--help']);
-  assert.match(help.stdout, /usage: jstack/);
+  assert.match(help.stdout, /usage: jstack-cli/);
   assert.equal(help.status, 0);
 });
 
-test('bin/jstack runs through a symlink placed on PATH', () => {
+test('bin/jstack-cli runs through a symlink placed on PATH', () => {
   const dir = tempDir();
-  symlinkSync(BIN, join(dir, 'jstack'));
-  const r = spawnSync(join(dir, 'jstack'), ['--help'], { encoding: 'utf8', env: { ...process.env, JSTACK_PSTACK_DIR: PSTACK } });
-  assert.match(r.stdout, /usage: jstack/);
+  symlinkSync(BIN, join(dir, 'jstack-cli'));
+  const r = spawnSync(join(dir, 'jstack-cli'), ['--help'], { encoding: 'utf8', env: { ...process.env, JSTACK_PSTACK_DIR: PSTACK } });
+  assert.match(r.stdout, /usage: jstack-cli/);
   assert.equal(r.status, 0);
 });

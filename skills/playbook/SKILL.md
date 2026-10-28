@@ -1,6 +1,6 @@
 ---
 name: playbook
-description: Lists, computes and validates layered poteto-mode playbooks with the jstack CLI. compute prints one playbook with personal, org and repo layers applied over pstack's bundled steps in cascade order, each step tagged with the layer that wrote it and every override named; check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `jstack playbook compute`, when writing or editing a layer playbook file, or after a pstack upgrade.
+description: Lists, computes and validates layered poteto-mode playbooks with the jstack CLI. compute prints one playbook with personal, org and repo layers applied over pstack's bundled steps in cascade order, each step tagged with the layer that wrote it and every override named; check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `jstack-cli playbook compute`, when writing or editing a layer playbook file, or after a pstack upgrade.
 argument-hint: "<list|compute|check> [playbook] [--repo <repo>]"
 compatibility: Requires Node and the pstack plugin's poteto-mode skill.
 license: MIT
@@ -12,14 +12,14 @@ jstack layers a user's personal and team playbooks over pstack's bundled poteto-
 
 ## Run it
 
-1. Use `jstack` when it is on `PATH`. Otherwise run `node scripts/jstack.mjs` from this skill's folder. Both are the same script, and the `PATH` copy is how the user runs it in a terminal.
+1. Use `jstack-cli` when it is on `PATH`. Otherwise run `node scripts/jstack.mjs` from this skill's folder. Both are the same script, and the `PATH` copy is how the user runs it in a terminal.
 2. Map the argument to a command:
 
    | Argument | Command |
    | --- | --- |
-   | `list` | `jstack playbook list` |
-   | `compute <playbook>` | `jstack playbook compute <playbook>` |
-   | `check` | `jstack check` |
+   | `list` | `jstack-cli playbook list` |
+   | `compute <playbook>` | `jstack-cli playbook compute <playbook>` |
+   | `check` | `jstack-cli check` |
 
 3. Pass `--repo <repo>` through when given. Without it, jstack reads the repo from the current directory's checkout.
 4. Print the output as it is. The tags, struck text and override list are what the user reads to see which layer changed a step, so rewording them hides that.
@@ -38,7 +38,7 @@ Exit code 1 means a validator problem. Report each problem line to the user and 
 - Put the file in its layer's folder and keep pstack's grammar: `extends`, `when`, and edit lines `- **After|Before|Replace|In** "quote" change`. pstack's own checker reads team files, so a new verb or key there breaks pstack. Layout and cascade rules: [references/layers.md](references/layers.md).
 - Quote a short, distinctive phrase from one step, such as its bold title. pstack rewrites step text between releases, and a long quote breaks on the first rewrite.
 - Team files quote pstack's text only, and carry `layer:` and `source:`. pstack's checker sees team files without the other layers, so a quote from a lower layer fails there.
-- Run `jstack check` after every edit and after every pstack upgrade. It catches a quote that matches nothing, matches two steps or sits outside the steps, before an agent runs the playbook.
+- Run `jstack-cli check` after every edit and after every pstack upgrade. It catches a quote that matches nothing, matches two steps or sits outside the steps, before an agent runs the playbook.
 
 ## Output schemas
 

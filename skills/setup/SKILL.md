@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Sets up jstack for one user, and is safe to rerun. Asks for a handle and a mode trigger, runs pstack's automate-me to write or update the user's <handle>-mode skill so it computes playbooks through jstack, scaffolds the jstack config dir and layers.json, records the user's org and its forge owners, and links each named repo's team playbook folder into its checkout with a git exclude line. Use when installing jstack, adding an org or a repo to it, changing the mode trigger, or repairing a config that jstack check reports broken.
+description: Sets up jstack for one user, and is safe to rerun. Asks for a handle and a mode trigger, runs pstack's automate-me to write or update the user's <handle>-mode skill so it computes playbooks through jstack, scaffolds the jstack config dir and layers.json, records the user's org and its forge owners, and links each named repo's team playbook folder into its checkout with a git exclude line. Use when installing jstack, adding an org or a repo to it, changing the mode trigger, or repairing a config that jstack-cli check reports broken.
 compatibility: Requires git, Node, and the pstack plugin with its automate-me and poteto-mode skills.
 license: MIT
 ---
@@ -25,5 +25,5 @@ This skill turns a fresh install into a working jstack: a `<handle>-mode` skill 
 5. Ask for the org: its name, and the forge owners whose repos belong to it, such as an organization login. Offer "none" for a user with no team rules. An org scopes `orgs/<org>/` rules to repos with a listed owner, so rules for one employer never reach a side project.
 6. Scaffold the config tree and `layers.json` per [references/scaffold.md](references/scaffold.md). Record the handle, trigger as `manual`, `auto` or `session`, and the org. Set `pstack` to the installed version only when the file is new.
 7. Ask which repos to link, as checkout paths. For each one, find its main checkout and key, link each org standard file into `<config>/repos/<repo>/team/`, link that folder to `<main checkout>/.agents/playbooks`, and add the exclude line, all per [references/scaffold.md](references/scaffold.md). pstack reads team playbooks only from `.agents/playbooks`, and the exclude line keeps the link out of the team's diffs.
-8. Run `jstack check --repo <repo>` for each linked repo, or `node scripts/jstack.mjs` from the jstack playbook skill when `jstack` is not on `PATH`. Report every line it prints. A broken link or a stale quote found now costs less than one found mid-task.
+8. Run `jstack-cli check --repo <repo>` for each linked repo, or `node scripts/jstack.mjs` from the jstack-cli playbook skill when `jstack-cli` is not on `PATH`. Report every line it prints. A broken link or a stale quote found now costs less than one found mid-task.
 9. Reply with what was created, edited, linked and left unchanged, and the command to run the mode skill.

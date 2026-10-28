@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "jstack playbook compute --json",
+  "title": "jstack-cli playbook compute --json",
   "description": "One playbook after every layer's edits are applied in cascade order.",
   "type": "object",
   "additionalProperties": false,

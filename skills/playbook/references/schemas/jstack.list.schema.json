@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "jstack playbook list --json",
+  "title": "jstack-cli playbook list --json",
   "description": "Every playbook the cascade knows, and what each layer does to it.",
   "type": "object",
   "additionalProperties": false,
