@@ -73,6 +73,7 @@ test('compute --json carries the same cascade as data', () => {
       { step: 5, layer: 'org.standard', verb: 'In', quote: 'Order is conflicts, then threads, then CI', origin: 'pstack' },
       { step: 6, layer: 'user', verb: 'Replace', quote: 'Babysitting never authorizes merging', origin: 'pstack' },
     ],
+    handoffs: [],
     problems: [],
     pstackCheck: { status: 'ok', lines: [OK_LINE] },
   });
@@ -160,11 +161,106 @@ test('with no config the cascade is pstack alone', () => {
 1. Name the data shape.   [pstack]
 2. Delegate the code.   [pstack]
 3. Verify on the real surface.   [pstack]
+4. Run **Opening a PR**, per **Nowhere**.   [pstack]
+
+Hands off to:
+- opening-a-pr (step 4)
 
 pstack check-playbooks:
 not run: no .agents/playbooks
 `);
   assert.equal(r.status, 0);
+});
+
+const HANDOFFS = {
+  files: {
+    'user/handoffs.md': `---
+when: handing work between playbooks
+---
+
+1. Run **Opening a PR** once the diff is clean.
+2. Write it per **Comments**, then hand it to Shiping.
+3. Route that request to **Babysat**, or per \`playbooks/triage.md\`.
+4. Then run web-releas and opening-a-pr.
+5. Hand the frontier to Babysit once green.
+6. Run read-only checks per PR.
+`,
+    'repos/web/overrides/handoffs.md': `---
+when: handing work between web playbooks
+---
+
+- Then run web-release, or hand it to **Babysit**.
+`,
+  },
+};
+
+test('compute lists each playbook the steps hand off to, with its steps', () => {
+  const w = world(HANDOFFS);
+  const r = w.run(['playbook', 'compute', 'handoffs']);
+  assert.equal(r.stdout, `# handoffs (web · acme-eng · pstack 1.0.0)
+
+1. Run **Opening a PR** once the diff is clean.   [user]
+2. Write it per **Comments**, then hand it to Shiping.   [user]
+3. Route that request to **Babysat**, or per \`playbooks/triage.md\`.   [user]
+4. Then run web-releas and opening-a-pr.   [user]
+5. Hand the frontier to Babysit once green.   [user]
+6. Run read-only checks per PR.   [user]
+
+Hands off to:
+- opening-a-pr (steps 1 and 4)
+- triage (step 3)
+- babysit (step 5, notes)
+- web-release (notes)
+
+Notes:
+- Then run web-release, or hand it to **Babysit**.   [repo.overrides]
+
+Problems:
+${w.config}/user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines
+${w.config}/user/handoffs.md:7: hands off to Babysat, which no layer or pstack defines
+${w.config}/user/handoffs.md:8: hands off to web-releas, which no layer or pstack defines
+
+pstack check-playbooks:
+ok
+`);
+  assert.equal(r.status, 1);
+  assert.deepEqual(JSON.parse(w.run(['playbook', 'compute', 'handoffs', '--json']).stdout).handoffs, [
+    { playbook: 'opening-a-pr', steps: [1, 4], inNotes: false },
+    { playbook: 'triage', steps: [3], inNotes: false },
+    { playbook: 'babysit', steps: [5], inNotes: true },
+    { playbook: 'web-release', steps: [], inNotes: true },
+  ]);
+});
+
+test('check flags a layer handoff nothing defines, and leaves section names and pstack text alone', () => {
+  const w = world(HANDOFFS);
+  const r = w.run(['check']);
+  assert.deepEqual(lines(r.stdout), [
+    OK_LINE,
+    `${w.config}/user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines`,
+    `${w.config}/user/handoffs.md:7: hands off to Babysat, which no layer or pstack defines`,
+    `${w.config}/user/handoffs.md:8: hands off to web-releas, which no layer or pstack defines`,
+    'proposed: .agents/playbooks/babysit.md:5',
+    'check failed: 3 problems against pstack 1.0.0',
+  ]);
+  assert.equal(r.status, 1);
+});
+
+test('a handoff inside an edit is checked, but the pstack words it quotes are not', () => {
+  const w = world({
+    files: {
+      'user/feature.md': `---
+extends: feature
+when: building a feature
+---
+
+- **In** "Run **Opening a PR**, per **Nowhere**." Then hand it to **Shiping**.
+`,
+    },
+  });
+  const r = w.run(['check']);
+  assert.ok(lines(r.stdout).includes(`${w.config}/user/feature.md:6: hands off to Shiping, which no layer or pstack defines`), r.stdout);
+  assert.ok(!r.stdout.includes('Nowhere'), r.stdout);
 });
 
 test('list shows which layer defines or edits each playbook', () => {

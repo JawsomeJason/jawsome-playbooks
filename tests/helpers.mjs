@@ -7,7 +7,6 @@ import { fileURLToPath } from 'node:url';
 export const CLI = fileURLToPath(new URL('../skills/playbook/scripts/jstack.mjs', import.meta.url));
 export const BIN = fileURLToPath(new URL('../bin/jstack', import.meta.url));
 export const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
-export const PSTACK = join(FIXTURES, 'pstack', '1.0.0');
 
 const made = [];
 process.once('exit', () => {
@@ -18,6 +17,12 @@ export const tempDir = () => {
   made.push(dir);
   return dir;
 };
+
+// poteto-mode's SKILL.md is written here, not kept in fixtures, because the repo lint would read it as a skill of this repo.
+const pstacks = join(tempDir(), 'pstack');
+cpSync(join(FIXTURES, 'pstack'), pstacks, { recursive: true });
+writeFileSync(join(pstacks, '1.0.0', 'skills', 'poteto-mode', 'SKILL.md'), '# Poteto mode\n\n## Comments\n\nKeep a comment only for a non-obvious why.\n');
+export const PSTACK = join(pstacks, '1.0.0');
 
 const GIT_ENV = {
   GIT_AUTHOR_NAME: 'Test Author',
