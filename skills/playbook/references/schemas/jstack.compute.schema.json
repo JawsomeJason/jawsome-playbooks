@@ -4,7 +4,7 @@
   "description": "One playbook after every layer's edits are applied in cascade order.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["playbook", "repo", "owner", "org", "pstack", "steps", "notes", "overrides", "problems", "pstackCheck"],
+  "required": ["playbook", "repo", "owner", "org", "pstack", "steps", "notes", "overrides", "handoffs", "problems", "pstackCheck"],
   "$defs": {
     "layer": { "type": "string", "enum": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"] },
     "problem": {
@@ -69,6 +69,20 @@
           "quote": { "type": "string" },
           "origin": { "oneOf": [{ "const": "pstack" }, { "$ref": "#/$defs/layer" }] },
           "over": { "$ref": "#/$defs/layer", "description": "A lower layer whose Replace of the same words this one supersedes." }
+        }
+      }
+    },
+    "handoffs": {
+      "type": "array",
+      "description": "Each other playbook the steps or notes hand off to, in order of first mention. Only references that resolve to a known playbook appear; check reports the rest.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["playbook", "steps", "inNotes"],
+        "properties": {
+          "playbook": { "type": "string", "description": "Stem of the playbook handed off to. Compute it too." },
+          "steps": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Steps that name it, ascending. Empty when only notes do." },
+          "inNotes": { "type": "boolean", "description": "true when a note names it." }
         }
       }
     },

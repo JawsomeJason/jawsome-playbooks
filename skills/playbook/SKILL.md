@@ -29,6 +29,7 @@ Exit code 1 means a validator problem. Report each problem line to the user and 
 ## Running a computed playbook
 
 - Copy `compute`'s numbered steps into the todolist once, as poteto-mode's copy-and-apply step. Recomputing mid-task can change the list under the work.
+- When the run reaches a playbook listed under `Hands off to:`, compute that playbook with jstack and run its computed steps. Its own layers change its steps, so the bundled text alone would drop them.
 - Name every line under `Overrides:` in the reply. An override changes the bundled behavior the user expects, so it must be visible.
 - When `pstack check-playbooks:` shows lines other than `ok`, report them as poteto-mode asks.
 

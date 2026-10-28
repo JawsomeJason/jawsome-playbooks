@@ -38,7 +38,7 @@ Prints the playbook with every layer applied, as Markdown:
 2. **Stop at the human's line.** ~~Never merge~~ Merge once green.   [pstack ~ user]
 ```
 
-Each step ends with its origin layer, then `~` and each layer that edited it. Struck text is what a `Replace` removed. `Notes:`, `Overrides:` and `Problems:` follow when they have entries, and `pstack check-playbooks:` comes last with pstack's own checker result. `--json` prints the same data, shaped by [schemas/jstack.compute.schema.json](schemas/jstack.compute.schema.json).
+Each step ends with its origin layer, then `~` and each layer that edited it. Struck text is what a `Replace` removed. `Hands off to:` follows when the steps or notes send the work to another playbook, one line per playbook stem with the steps that name it, such as `- opening-a-pr (step 8)`. Compute each of those playbooks too, because their own layers change their steps. `Notes:`, `Overrides:` and `Problems:` follow when they have entries, and `pstack check-playbooks:` comes last with pstack's own checker result. `--json` prints the same data, shaped by [schemas/jstack.compute.schema.json](schemas/jstack.compute.schema.json).
 
 When the installed pstack differs from `layers.json`'s `pstack`, `compute` runs `check` first. A pass records the new version, and a failure stops with exit 1, because an upgrade that moved the quoted text would otherwise apply edits in the wrong place.
 
@@ -62,5 +62,8 @@ Runs pstack's `check-playbooks.mjs` from the repo root when the repo has `.agent
 | team file anchor is not pstack's text | `team files may quote pstack only` |
 | the file defining a standalone playbook has edit lines | `standalone playbook cannot carry edits` |
 | a symlink in the config dir or `.agents/playbooks` is dangling | `broken link -> <target>` |
+| a layer file hands off to a playbook that no layer or pstack defines | `hands off to <x>, which no layer or pstack defines` |
+
+A handoff is a `playbooks/<stem>.md` path, or a playbook named right after `run`, `per`, `route ... to` or `hand ... to`, as a bold title, a capitalized title or a kebab-case stem. A title resolves to a stem the way poteto-mode resolves it: kebab case, hyphens kept, other punctuation dropped. A bold name that is a poteto-mode section or skill, such as **Comments**, is not a handoff. Only text a layer file wrote is checked, never the pstack words an edit quotes, because pstack owns its own text.
 
 It also prints `proposed: <path>:<line>` for each team file whose `source` is `proposed`. `--json` follows [schemas/jstack.check.schema.json](schemas/jstack.check.schema.json). Without `--pstack`, a pass records the checked version in `layers.json`.

@@ -28,6 +28,7 @@ const CHANGE = /^\s*(?:[-*]|\d+\.)\s+\*\*(After|Before|Replace|In)\*\*\s+"([^"]+
 const CHANGE_VERB = /^\s*(?:[-*]|\d+\.)\s+\*\*(?:After|Before|Replace|In)\*\*/;
 const LIST_ITEM = /^\s*(?:[-*]|\d+\.)\s+(.*)$/;
 const NUMBERED_STEP = /^\d+\.\s(.*)$/;
+const HEADING = /^#{1,6}\s+(.+)$/;
 
 const FAILURES = {
   ambiguous: { rank: 4, message: (quote, steps) => `quote matches steps ${andList(steps)}; make it longer` },
@@ -43,10 +44,11 @@ const andList = (items) => (items.length < 2 ? String(items[0]) : `${items.slice
 const quoteRegex = (quote) => new RegExp(quote.trim().split(/\s+/).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'));
 const normalize = (text) => text.replace(/^\uFEFF/, '').replaceAll('\r\n', '\n');
 
-/** Splits playbook text into intro and step texts: numbered steps, else bold-lead paragraphs. */
+/** Splits playbook text into its first heading, intro and step texts: numbered steps, else bold-lead paragraphs. */
 function parsePlaybook(text) {
   const lines = normalize(text).split('\n');
-  return lines.some((l) => NUMBERED_STEP.test(l)) ? numberedSteps(lines) : boldLeadSteps(lines);
+  const title = lines.map((l) => HEADING.exec(l)?.[1]).find(Boolean) ?? null;
+  return { title, ...(lines.some((l) => NUMBERED_STEP.test(l)) ? numberedSteps(lines) : boldLeadSteps(lines)) };
 }
 
 function numberedSteps(lines) {
@@ -103,6 +105,7 @@ function parseLayerText(raw) {
     }
   }
   const edits = [];
+  const prose = [];
   const notes = [];
   const malformed = [];
   const body = [];
@@ -113,6 +116,7 @@ function parseLayerText(raw) {
     if (change) {
       open = { verb: change[1], quote: change[2], text: change[3].trim(), line: i + 1 };
       edits.push(open);
+      prose.push({ text: open.text, line: open.line });
       continue;
     }
     if (CHANGE_VERB.test(line)) {
@@ -121,6 +125,7 @@ function parseLayerText(raw) {
       continue;
     }
     body.push(line);
+    prose.push({ text: line, line: i + 1 });
     if (isBlank(line) || /^#{1,6}\s/.test(line)) {
       open = null;
       continue;
@@ -133,7 +138,7 @@ function parseLayerText(raw) {
       open.text += ` ${line.trim()}`;
     }
   }
-  return { front, hasFront, edits, notes, malformed, body: body.join('\n') };
+  return { front, hasFront, edits, notes, malformed, prose, body: body.join('\n') };
 }
 
 let groups = 0;
@@ -210,7 +215,7 @@ const VERBS = {
 
 const makePlaybook = (name, origin, parsed) => {
   const steps = parsed.steps.map((t) => newStep(t, origin));
-  return { name, origin, intro: parsed.intro, steps, bundled: origin === 'pstack' ? [...steps] : [], notes: [], definedBy: null };
+  return { name, origin, title: parsed.title, intro: parsed.intro, steps, bundled: origin === 'pstack' ? [...steps] : [], notes: [], definedBy: null };
 };
 
 /** Finds the one step a quote names, or the reason it names none. Team files search bundled text only. */
@@ -277,12 +282,100 @@ function cascade(bundled, files, order) {
   return playbooks;
 }
 
+const kebab = (title) => title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
+
+/**
+ * Resolves a written name to a playbook stem by stem or by title, the way poteto-mode turns a title into a file name.
+ * `ignored` names a poteto-mode section or skill, which a bold word after "per" often means instead.
+ */
+function playbookIndex(pstackDir, playbooks, files) {
+  const stems = new Map();
+  for (const pb of playbooks.values()) {
+    stems.set(pb.name, pb.name);
+    if (pb.title) stems.set(kebab(pb.title), pb.name);
+  }
+  for (const file of files) stems.set(file.stem, file.stem);
+  const skillsDir = join(pstackDir, 'skills');
+  const skills = new Set(listDir(skillsDir));
+  const guide = join(skillsDir, 'poteto-mode', 'SKILL.md');
+  const headings = isFile(guide) ? normalize(readFileSync(guide, 'utf8')).split('\n').map((l) => HEADING.exec(l)?.[1]) : [];
+  const sections = new Set(headings.filter(Boolean).map(kebab));
+  return {
+    resolve: (name) => stems.get(kebab(name)) ?? null,
+    ignored: (name) => [kebab(name), `principle-${kebab(name)}`].some((k) => sections.has(k) || skills.has(k)),
+  };
+}
+
+const HANDOFF_PATH = /playbooks\/([a-z0-9-]+)\.md/g;
+const HANDOFF_VERB = /\b(?:(run|per)\s+|(?:route[sd]?|routing|hand(?:s|ed|ing)?)\b[^.!?\n]{0,60}?\bto\s+)/gi;
+const HANDOFF_ITEM = /^(?:\*\*([^*]+)\*\*|([a-z0-9]+(?:-[a-z0-9]+)+)(?![\w-])|([A-Z][\w'&-]*(?:[ \t]+[\w'&-]+){0,6}))/;
+const HANDOFF_JOIN = /^(?:,\s*(?:and\s+|or\s+)?|\s+(?:and|or)\s+)/;
+// A kebab word that ends its clause names a thing; one followed by a noun ("run read-only checks") modifies it.
+const CLAUSE_END = /^(?:$|[.,;:!?)]|\s+(?:and|or|for|to|on|with|when|once|after|before|then|first|again|if|in|per|as)\b)/;
+
+/** The one handoff `rest` starts with: { length, ref }, where ref is null when the words name no playbook. */
+function handoffItem(rest, index, toward) {
+  const m = HANDOFF_ITEM.exec(rest);
+  if (!m) return null;
+  const [whole, bold, slug, plain] = m;
+  const ref = (name, looks) => {
+    const stem = index.resolve(name);
+    return stem || looks ? { name, stem } : null;
+  };
+  if (bold) return { length: whole.length, ref: ref(bold, !index.ignored(bold)) };
+  if (slug) return { length: whole.length, ref: ref(slug, !index.ignored(slug) && CLAUSE_END.test(rest.slice(whole.length))) };
+  const words = [...plain.matchAll(/[\w'&-]+/g)];
+  for (let k = words.length; k > 0; k--) {
+    const end = words[k - 1].index + words[k - 1][0].length;
+    if (index.resolve(plain.slice(0, end))) return { length: end, ref: ref(plain.slice(0, end), true) };
+  }
+  // A capitalized word after "route ... to" or "hand ... to" is a playbook title; after "run" or "per" it is often not ("per PR").
+  const first = words[0][0];
+  return { length: first.length, ref: ref(first, toward && /^[A-Z][a-z]/.test(first) && !index.ignored(first)) };
+}
+
+/** Every playbook reference in text, in order: { name, stem }, where stem is null when nothing defines it. */
+function handoffRefs(text, index) {
+  const found = [...text.matchAll(HANDOFF_PATH)].map((m) => ({ at: m.index, name: m[1], stem: index.resolve(m[1]) }));
+  for (const m of text.matchAll(HANDOFF_VERB)) {
+    let at = m.index + m[0].length;
+    for (;;) {
+      const item = handoffItem(text.slice(at), index, !m[1]);
+      if (!item?.ref) break;
+      found.push({ at, ...item.ref });
+      at += item.length;
+      const join = HANDOFF_JOIN.exec(text.slice(at));
+      if (!join) break;
+      at += join[0].length;
+    }
+  }
+  return found.sort((a, b) => a.at - b.at).map(({ name, stem }) => ({ name, stem }));
+}
+
+/** Each other playbook the steps, then the notes, hand off to, in order of first mention. */
+function handoffs(pb, index) {
+  const found = new Map();
+  const mention = (text, step) => {
+    for (const { stem } of handoffRefs(text, index)) {
+      if (!stem || stem === pb.name) continue;
+      if (!found.has(stem)) found.set(stem, { playbook: stem, steps: [], inNotes: false });
+      const entry = found.get(stem);
+      if (!step) entry.inNotes = true;
+      else if (!entry.steps.includes(step)) entry.steps.push(step);
+    }
+  };
+  pb.steps.forEach((s, i) => mention(effective(s), i + 1));
+  for (const note of pb.notes) mention(note.text, null);
+  return [...found.values()];
+}
+
 const touches = (file, name) => file.targets?.includes(name) || (file.targets?.length === 0 && file.extends.length === 0 && file.stem === name);
 
-function computed(pb, order) {
+function computed(pb, order, index) {
   const rank = (layer) => order.indexOf(layer);
   return {
     steps: pb.steps.map((s) => ({ text: effective(s), origin: s.origin, touched: s.touched, display: display(s) })),
+    handoffs: handoffs(pb, index),
     notes: pb.notes,
     overrides: pb.steps
       .flatMap((s, i) => s.overrides.map((o) => ({ step: i + 1, ...o })))
@@ -462,6 +555,7 @@ function readLayerFile(path, displayPath, layer, team, pstackVersion) {
     front,
     edits: parsed.edits,
     notes: parsed.notes,
+    prose: parsed.prose,
     body: parsed.body,
     problems,
     pstackVersion,
@@ -552,8 +646,17 @@ function analyze(ctx, { pstackCheck }) {
   const bundled = new Map(mdFiles(bundledDir).map((f) => [basename(f, '.md'), parsePlaybook(readFileSync(join(bundledDir, f), 'utf8'))]));
   const files = collectFiles(ctx);
   const playbooks = cascade(bundled, files.active, ctx.order);
+  const layerFiles = [...files.active, ...files.inactive];
+  const index = playbookIndex(ctx.pstack.dir, playbooks, layerFiles);
+  for (const file of layerFiles) {
+    for (const { text, line } of file.prose) {
+      for (const ref of handoffRefs(text, index)) {
+        if (!ref.stem) file.problems.push({ line, message: `hands off to ${ref.name}, which no layer or pstack defines` });
+      }
+    }
+  }
   const links = brokenLinks(ctx);
-  return { files, playbooks, links, pstackCheck: pstackCheck ? runPstackCheck(ctx, links.teamBroken) : null };
+  return { files, playbooks, index, links, pstackCheck: pstackCheck ? runPstackCheck(ctx, links.teamBroken) : null };
 }
 
 const fileProblems = (files) => files.flatMap((f) => [...f.problems].sort((a, b) => a.line - b.line).map((p) => ({ path: f.display, ...p })));
@@ -612,6 +715,10 @@ function renderCompute(r) {
       })
       .join('\n'),
   );
+  if (r.handoffs.length) {
+    const where = (h) => [...(h.steps.length ? [`${h.steps.length > 1 ? 'steps' : 'step'} ${andList(h.steps)}`] : []), ...(h.inNotes ? ['notes'] : [])].join(', ');
+    sections.push(['Hands off to:', ...r.handoffs.map((h) => `- ${h.playbook} (${where(h)})`)].join('\n'));
+  }
   if (r.notes.length) sections.push(['Notes:', ...r.notes.map((n) => `- ${n.text}   [${n.layer}]`)].join('\n'));
   if (r.overrides.length) {
     const line = (o) => `- step ${o.step}: ${o.layer} ${o.verb === 'Replace' ? 'replaced' : 'added to'} "${o.quote}" (${o.origin}${o.over ? `, over ${o.over}` : ''})`;
@@ -634,7 +741,7 @@ function runCompute(ctx, opts, name) {
   }
   const touching = analysis.files.active.filter((f) => touches(f, name));
   const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems(touching)];
-  const result = { playbook: name, ...computed(pb, ctx.order), problems, pstackCheck: analysis.pstackCheck };
+  const result = { playbook: name, ...computed(pb, ctx.order, analysis.index), problems, pstackCheck: analysis.pstackCheck };
   const status = problems.length || analysis.pstackCheck.status === 'failed' ? 1 : 0;
   if (!opts.json) return { out: renderCompute({ ...result, header: headerParts(ctx) }), status };
   const { repo } = ctx;
@@ -648,6 +755,7 @@ function runCompute(ctx, opts, name) {
       steps: result.steps.map(({ text, origin, touched }) => ({ text, origin, touched })),
       notes: result.notes,
       overrides: result.overrides,
+      handoffs: result.handoffs,
       problems,
       pstackCheck: analysis.pstackCheck,
     },
