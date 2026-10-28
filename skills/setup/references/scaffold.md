@@ -40,14 +40,15 @@ A worktree's common dir is the main checkout's `.git`, so every worktree of a re
 Link each org standard file into the team folder, skipping files already linked:
 
 ```sh
-for f in "$CONFIG/orgs/$ORG/standard/"*.md; do
-  name=$(basename "$f")
-  [ -e "$CONFIG/repos/$REPO/team/$name" ] || [ -L "$CONFIG/repos/$REPO/team/$name" ] ||
-    ln -s "../../../orgs/$ORG/standard/$name" "$CONFIG/repos/$REPO/team/$name"
-done
+find "$CONFIG/orgs/$ORG/standard" -maxdepth 1 -name '*.md' -print0 |
+  while IFS= read -r -d '' f; do
+    name=$(basename "$f")
+    [ -e "$CONFIG/repos/$REPO/team/$name" ] || [ -L "$CONFIG/repos/$REPO/team/$name" ] ||
+      ln -s "../../../orgs/$ORG/standard/$name" "$CONFIG/repos/$REPO/team/$name"
+  done
 ```
 
-The links are relative, so the config dir still works after it moves or when it is itself a symlink.
+`find` lists the files instead of a `*.md` glob, so the loop runs the same in bash and zsh with zero, one or many files. An unmatched glob stops zsh with `no matches found`, and in bash it makes a link named `*.md`. The links are relative, so the config dir still works after it moves or when it is itself a symlink.
 
 Link the team folder into the checkout:
 
