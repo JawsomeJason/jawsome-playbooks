@@ -6,7 +6,7 @@ jstack-cli playbook compute <playbook> [--repo <repo>] [--json] [--pstack <dir-o
 jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
 ```
 
-The script is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/jstack-cli` links to it, so a user can put the command on `PATH` with one symlink. The command is `jstack-cli`, not `jstack`, because Java development kits install a `jstack` of their own that can shadow it on `PATH`.
+The script is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/jstack-cli` imports it, so a user can put the command on `PATH` with one symlink. The command is `jstack-cli`, not `jstack`, because Java development kits install a `jstack` of their own that can shadow it on `PATH`.
 
 ## Exit codes
 

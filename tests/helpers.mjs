@@ -51,7 +51,9 @@ export function world({ files = {}, links = {}, remote = 'git@example.com:acme-e
     mkdirSync(dirname(join(config, path)), { recursive: true });
     writeFileSync(join(config, path), content);
   }
-  for (const [path, target] of Object.entries(links)) symlinkSync(target, join(config, path));
+  // Muse refuses to install a plugin that contains a symlink, so the fixtures store none and this link is made here.
+  const teamLinks = { 'repos/web/team/babysit.md': '../../../orgs/acme/standard/babysit.md', ...links };
+  for (const [path, target] of Object.entries(teamLinks)) symlinkSync(target, join(config, path));
   const home = join(root, 'home');
   const outside = join(root, 'outside');
   mkdirSync(home);

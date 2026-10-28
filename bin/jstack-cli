@@ -1,1 +1,2 @@
-../skills/playbook/scripts/jstack.mjs
+#!/usr/bin/env node
+import '../skills/playbook/scripts/jstack.mjs';
