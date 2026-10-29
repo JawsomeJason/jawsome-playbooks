@@ -2,6 +2,5 @@
   "handle": "tester",
   "modeTrigger": "manual",
   "pstack": "1.0.0",
-  "layers": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"],
   "orgs": { "acme": { "owners": ["acme-eng"] } }
 }

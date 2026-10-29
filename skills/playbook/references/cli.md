@@ -17,7 +17,7 @@ jstack-cli is `scripts/jstack.mjs` in this skill. It needs Node and nothing else
 
 | Option | Effect |
 | --- | --- |
-| `--repo <repo>` | Sets the repo key. When it differs from the current checkout's key, jstack-cli ignores the checkout and reads team files from `<config>/repos/<repo>/team/`. |
+| `--repo <repo>` | Sets the repo key. When it differs from the current checkout's key, jstack-cli ignores the checkout and reads team files from `<config>/03-repos/<repo>/01-team/`. |
 | `--json` | Prints JSON that follows the command's schema in [schemas/](schemas/). |
 | `--fix` | `doctor` only. Asks before each fix, then runs it. See [doctor](#doctor). |
 | `--pstack <dir-or-version>` | Uses that pstack instead of the one jstack-cli finds. It takes a folder, or a version next to the one in use or in any plugin cache. With this flag, jstack-cli never writes `layers.json`, so you can preview an upgrade. |
@@ -81,11 +81,11 @@ When the installed pstack differs from the `pstack` in `layers.json`, `compute` 
 **Work the merge frontier.** The lowest open PR matters first.   [pstack]
 
 Write the edit in:
-- user: /home/sam/.jstack/user/babysit.md (exists)
+- user: /home/sam/.jstack/01-user/babysit.md (exists)
 - org.standard: .agents/playbooks/babysit.md (exists)
-- org.overrides: /home/sam/.jstack/orgs/acme/overrides/babysit.md (new)
+- org.overrides: /home/sam/.jstack/02-orgs/acme/02-overrides/babysit.md (new)
 - repo.standard: .agents/playbooks/web-babysit.md (new; team files may quote pstack only)
-- repo.overrides: /home/sam/.jstack/repos/web/overrides/babysit.md (exists)
+- repo.overrides: /home/sam/.jstack/03-repos/web/02-overrides/babysit.md (exists)
 ```
 
 Each layer line gives the path, `exists` or `new`, and the reason an edit there cannot anchor on the quote, if one applies. jstack-cli judges the quote against the step as the layers below that layer leave it, because that is the text the edit matches when the cascade runs. A layer's existing file is the one that already edits the playbook. A new team file in `.agents/playbooks` takes `<repo>-<playbook>.md` when `<playbook>.md` is taken. The layer that wrote the step gets `this layer wrote the step; change its text there`, because an edit line cannot anchor on text its own layer adds.
@@ -132,7 +132,7 @@ A handoff to a playbook that this repo's layers lack, but that some layer folder
 | jstack-cli | `jstack-cli` on `PATH` resolves to a jstack `bin/jstack-cli`. A `jstack` on `PATH` that is not jstack's, such as Java's, prints a `-` line. |
 | config | The config dir exists, and `layers.json` parses and has a `handle`. |
 | mode skill | `<config>/mode/<handle>-mode/SKILL.md` exists, and a `skills` folder in a dot-folder of the home directory links to it. |
-| each repo | For each folder in `<config>/repos/`, the checkout's `.agents/playbooks` resolves to `<config>/repos/<repo>/team/`, and the checkout's `info/exclude` has `/.agents/playbooks`. |
+| each repo | For each folder in `<config>/03-repos/`, the checkout's `.agents/playbooks` resolves to `<config>/03-repos/<repo>/01-team/`, and the checkout's `info/exclude` has `/.agents/playbooks`. |
 | check | `jstack-cli check --repo <repo>` passes for each repo, or `jstack-cli check` passes when the config has no repos. |
 
 doctor finds a repo's checkout at `repos.<repo>.checkout` in `layers.json`, which the `setup` skill records. Without that key, it uses the current directory's checkout when its key matches. A repo with neither gets a `-` line, and doctor skips its link check.

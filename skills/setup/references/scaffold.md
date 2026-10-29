@@ -5,8 +5,8 @@ Every command here checks before it writes, so a second run of the whole page ch
 ## Create the config dir folders
 
 ```sh
-mkdir -p "$CONFIG/user" "$CONFIG/orgs/$ORG/standard" "$CONFIG/orgs/$ORG/overrides"
-mkdir -p "$CONFIG/repos/$REPO/team" "$CONFIG/repos/$REPO/overrides"
+mkdir -p "$CONFIG/01-user" "$CONFIG/02-orgs/$ORG/01-standard" "$CONFIG/02-orgs/$ORG/02-overrides"
+mkdir -p "$CONFIG/03-repos/$REPO/01-team" "$CONFIG/03-repos/$REPO/02-overrides"
 ```
 
 `mkdir -p` leaves existing folders and their files alone.
@@ -19,7 +19,6 @@ Create `layers.json` only when it is missing:
 {
   "handle": "<handle>",
   "modeTrigger": "manual",
-  "layers": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"],
   "orgs": { "<org>": { "owners": ["<forge owner>"] } },
   "repos": { "<repo>": { "checkout": "<main checkout>" } }
 }
@@ -41,11 +40,11 @@ A worktree's common dir is the main checkout's `.git`, so every worktree of a re
 Link each org standard file into the team folder. The loop skips a file that is already linked:
 
 ```sh
-find "$CONFIG/orgs/$ORG/standard" -maxdepth 1 -name '*.md' -print0 |
+find "$CONFIG/02-orgs/$ORG/01-standard" -maxdepth 1 -name '*.md' -print0 |
   while IFS= read -r -d '' f; do
     name=$(basename "$f")
-    [ -e "$CONFIG/repos/$REPO/team/$name" ] || [ -L "$CONFIG/repos/$REPO/team/$name" ] ||
-      ln -s "../../../orgs/$ORG/standard/$name" "$CONFIG/repos/$REPO/team/$name"
+    [ -e "$CONFIG/03-repos/$REPO/01-team/$name" ] || [ -L "$CONFIG/03-repos/$REPO/01-team/$name" ] ||
+      ln -s "../../../02-orgs/$ORG/01-standard/$name" "$CONFIG/03-repos/$REPO/01-team/$name"
   done
 ```
 
@@ -56,7 +55,7 @@ Link the team folder into the checkout:
 ```sh
 mkdir -p "$MAIN/.agents"
 [ -e "$MAIN/.agents/playbooks" ] || [ -L "$MAIN/.agents/playbooks" ] ||
-  ln -s "$CONFIG/repos/$REPO/team" "$MAIN/.agents/playbooks"
+  ln -s "$CONFIG/03-repos/$REPO/01-team" "$MAIN/.agents/playbooks"
 ```
 
 When `.agents/playbooks` already exists and is not that link, stop and show the operator what is there. It may hold the repo's own tracked playbooks, and replacing it would delete their work.
