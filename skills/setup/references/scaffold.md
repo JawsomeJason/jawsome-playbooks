@@ -20,7 +20,8 @@ Create `layers.json` only when it is missing:
   "handle": "<handle>",
   "modeTrigger": "manual",
   "layers": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"],
-  "orgs": { "<org>": { "owners": ["<forge owner>"] } }
+  "orgs": { "<org>": { "owners": ["<forge owner>"] } },
+  "repos": { "<repo>": { "checkout": "<main checkout>" } }
 }
 ```
 
@@ -59,6 +60,8 @@ mkdir -p "$MAIN/.agents"
 ```
 
 When `.agents/playbooks` already exists and is not that link, stop and show the operator what is there. It may hold the repo's own tracked playbooks, and replacing it would delete their work.
+
+Record the main checkout as `repos.<repo>.checkout` in `layers.json`, with the diff shown first, as for any other change to the file. `jstack-cli doctor` reads it to find the checkout from any directory.
 
 Keep the link out of the repo's status without touching its tracked `.gitignore`:
 

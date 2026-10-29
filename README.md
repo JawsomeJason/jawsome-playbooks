@@ -92,7 +92,7 @@ jstack-cli finds pstack without help when the harness keeps a plugin cache in a 
 
 Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the config dir, links team folders into your repos, and links the mode skill into the skill folders your harness loads. The config dir is `$HOME/.jstack`, or `$JSTACK_CONFIG` when you set it. If it holds rules you would not publish, keep it private.
 
-After setup, start a new session, so the harness loads `/<handle>-mode`.
+After setup, start a new session, so the harness loads `/<handle>-mode`. To check the install later, run `jstack-cli doctor`. It prints each check with `✓` or `✗` and the commands that fix each failure. `jstack-cli doctor --fix` asks before it runs each fix. The [doctor reference](skills/playbook/references/cli.md#doctor) lists the checks.
 
 | Harness | How to run it | Checked |
 | --- | --- | --- |
