@@ -246,6 +246,38 @@ test('check flags a layer handoff nothing defines, and leaves section names and 
   assert.equal(r.status, 1);
 });
 
+test('a handoff to a playbook only another org defines is info, not a problem', () => {
+  const w = world({
+    files: {
+      'orgs/other/standard/syncing-a-ticket.md': `---
+when: moving a ticket on
+layer: org.standard
+source: ruleset
+---
+
+1. Move the ticket to done.
+`,
+      'user/landing.md': `---
+when: landing a PR
+---
+
+1. Once the last PR lands, run syncing-a-ticket.
+`,
+    },
+  });
+  const r = w.run(['check']);
+  assert.deepEqual(lines(r.stdout), [
+    OK_LINE,
+    `info: ${w.config}/user/landing.md:5: hands off to syncing-a-ticket, which only orgs/other/standard defines`,
+    'proposed: .agents/playbooks/babysit.md:5',
+    'check passed: pstack 1.0.0',
+  ]);
+  assert.equal(r.status, 0);
+  const json = JSON.parse(w.run(['check', '--json']).stdout);
+  assert.deepEqual(json.problems, []);
+  assert.deepEqual(json.info, [{ path: `${w.config}/user/landing.md`, line: 5, message: 'hands off to syncing-a-ticket, which only orgs/other/standard defines' }]);
+});
+
 test('a handoff inside an edit is checked, but the pstack words it quotes are not', () => {
   const w = world({
     files: {
