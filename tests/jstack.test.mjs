@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { BIN, FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs';
@@ -665,4 +665,30 @@ test('bin/jstack-cli runs through a symlink placed on PATH', () => {
   const r = spawnSync(join(dir, 'jstack-cli'), ['--help'], { encoding: 'utf8', env: { ...process.env, JSTACK_PSTACK_DIR: PSTACK } });
   assert.match(r.stdout, /usage: jstack-cli/);
   assert.equal(r.status, 0);
+});
+
+test('compute logs one line per read only when telemetry is on', () => {
+  const w = world();
+  const state = join(w.root, 'state');
+  const log = join(state, 'usage.jsonl');
+  w.run(['playbook', 'compute', 'babysit'], { env: { JSTACK_STATE: state } });
+  assert.equal(existsSync(log), false, 'telemetry is off by default');
+  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...readLayers(w.config), telemetry: true }));
+  w.run(['playbook', 'compute', 'babysit'], { env: { JSTACK_STATE: state } });
+  w.run(['playbook', 'compute', 'triage', '--json'], { env: { JSTACK_STATE: state } });
+  w.run(['playbook', 'compute', 'no-such-playbook'], { env: { JSTACK_STATE: state } });
+  const reads = lines(readFileSync(log, 'utf8')).map((l) => JSON.parse(l));
+  assert.deepEqual(reads.map(({ playbook, repo, org, pstack }) => ({ playbook, repo, org, pstack })), [
+    { playbook: 'babysit', repo: 'web', org: 'acme', pstack: '1.0.0' },
+    { playbook: 'triage', repo: 'web', org: 'acme', pstack: '1.0.0' },
+  ]);
+  assert.ok(reads.every((r) => !Number.isNaN(Date.parse(r.ts))));
+});
+
+test('a telemetry value that is not a boolean is a config error', () => {
+  const w = world();
+  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...readLayers(w.config), telemetry: 'yes' }));
+  const r = w.run(['check']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /"telemetry" must be true or false/);
 });

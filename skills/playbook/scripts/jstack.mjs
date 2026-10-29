@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -415,6 +415,7 @@ function readSettings(configDir) {
   const bad = (what) => new UsageError(`${path}: ${what}`);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw bad('must be a JSON object');
   if (raw.pstack !== undefined && typeof raw.pstack !== 'string') throw bad('"pstack" must be a string');
+  if (raw.telemetry !== undefined && typeof raw.telemetry !== 'boolean') throw bad('"telemetry" must be true or false');
   const orgs = raw.orgs ?? {};
   if (typeof orgs !== 'object' || Array.isArray(orgs)) throw bad('"orgs" must be an object');
   for (const [org, entry] of Object.entries(orgs)) {
@@ -425,7 +426,7 @@ function readSettings(configDir) {
   for (const [repo, entry] of Object.entries(repos)) {
     if (entry?.checkout !== undefined && typeof entry.checkout !== 'string') throw bad(`repos.${repo}.checkout must be a path`);
   }
-  return { path, raw, pstack: raw.pstack ?? null, orgs, repos };
+  return { path, raw, pstack: raw.pstack ?? null, telemetry: raw.telemetry ?? false, orgs, repos };
 }
 
 const gitOut = (cwd, args) => {
@@ -578,6 +579,18 @@ function resolvePstack(flag) {
 }
 
 const configDirPath = () => resolve(process.env.JSTACK_CONFIG || join(homedir(), '.jstack'));
+const usageLogPath = () => join(process.env.JSTACK_STATE || join(process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state'), 'jstack'), 'usage.jsonl');
+
+/** With `telemetry` on, one JSON line per computed playbook. A failed write never fails the compute. */
+function logRead(ctx, name) {
+  if (!ctx.settings?.telemetry) return;
+  const path = usageLogPath();
+  const line = { ts: new Date().toISOString(), playbook: name, repo: ctx.repo.name, org: ctx.repo.org, pstack: ctx.pstack.version };
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, `${JSON.stringify(line)}\n`);
+  } catch {}
+}
 
 function loadContext(opts) {
   const configDir = configDirPath();
@@ -818,6 +831,7 @@ function runCompute(ctx, opts, name) {
   const analysis = analyze(ctx, { pstackCheck: true });
   const pb = analysis.playbooks.get(name);
   if (!pb) throw new UsageError(`no playbook named ${name}`);
+  logRead(ctx, name);
   if (needsRecord(ctx)) {
     const report = checkReport(ctx, analysis);
     if (!report.passed) return { out: opts.json ? checkJson(report, false) : renderCheck(report, ctx.pstack.name), status: 1 };
