@@ -65,7 +65,7 @@ Link from a folder that updates in place. A link into a versioned cache folder k
 | Harness | Path to link | Checked |
 | --- | --- | --- |
 | Claude Code | `$HOME/.claude/plugins/marketplaces/jstack/bin/jstack-cli`, the marketplace clone that plugin updates refresh | Yes, the link. A local-checkout install keeps no clone, so the path follows the layout of pstack-claude's GitHub install. |
-| Codex | `$HOME/.codex/.tmp/marketplaces/jstack/bin/jstack-cli`, the marketplace clone that `codex plugin marketplace upgrade` refreshes | Path seen for pstack-claude's GitHub marketplace. Codex's plugin cache is versioned, under `$HOME/.codex/plugins/cache/jstack/jstack/<version>/`. |
+| Codex | `bin/jstack-cli` in your jstack clone. Codex offers no stable copy to link. Its marketplace snapshot sits in a temporary folder, `$HOME/.codex/.tmp/marketplaces/jstack/`, which `codex plugin marketplace upgrade` replaces, and its plugin cache is versioned, under `$HOME/.codex/plugins/cache/jstack/jstack/<version>/`. | Yes, both Codex paths, with codex-cli 0.154.0 and a throwaway `CODEX_HOME` |
 | Pi | `$HOME/.pi/agent/git/github.com/JawsomeJason/jstack/bin/jstack-cli` | Path seen for pstack-claude's git install |
 | GitHub Copilot | `$HOME/.copilot/installed-plugins/jstack/jstack/bin/jstack-cli`, from the layout pstack-claude's Copilot smoke test checks | Untested |
 | Muse | `bin/jstack-cli` in your jstack clone. Muse copies the plugin into a cache folder named by a content hash, which changes on every update. | Yes |
