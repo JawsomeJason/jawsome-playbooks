@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # The repo has no package dependencies; its CI actions are the only versions to keep current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

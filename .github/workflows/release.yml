@@ -1,0 +1,18 @@
+name: release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Installs pull main, so each version that reaches main gets a tag and release to pin or compare against.
+      - run: |
+          v="v$(node -p 'require("./package.json").version')"
+          if gh release view "$v" >/dev/null 2>&1; then echo "$v exists"; exit 0; fi
+          gh release create "$v" --target "$GITHUB_SHA" --title "$v" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
