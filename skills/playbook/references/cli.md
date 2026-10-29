@@ -40,7 +40,7 @@ jstack-cli picks the pstack folder in this order, and uses the first one that ho
 
 1. `JSTACK_PSTACK_DIR`.
 2. The install record. jstack-cli reads `plugins/installed_plugins.json` in every dot-folder of the home directory and takes the `installPath` of each `pstack@<marketplace>` entry that has no `projectPath`. When several qualify, the highest version by semver wins. A harness loads the version its record names, and its cache keeps older and newer versions next to it, so the record is what keeps jstack-cli on the pstack the session runs.
-3. The cache. jstack-cli looks in every dot-folder of the home directory for `plugins/cache/*/pstack/<version>/` and takes the highest version by semver.
+3. The cache. jstack-cli looks in every dot-folder of the home directory for `plugins/cache/*/pstack/<version>/` and takes the highest version by semver. Codex has no install record and needs none. It keeps one version of each plugin in its cache and replaces it on each install, upgrade, or downgrade, so the cache names the version Codex runs.
 
 Both searches use the layout that plugin harnesses share, so they find pstack without naming any one harness. A pstack in any other place needs `JSTACK_PSTACK_DIR`.
 

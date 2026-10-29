@@ -80,7 +80,7 @@ jstack-cli finds pstack without help when the harness keeps a plugin cache in a 
 | Harness | How jstack-cli finds pstack | Checked |
 | --- | --- | --- |
 | Claude Code | The install record, `$HOME/.claude/plugins/installed_plugins.json`, so it uses the version the session runs | Yes |
-| Codex | The highest version in `$HOME/.codex/plugins/cache/pstack-claude/pstack/`. Codex keeps no install record that jstack-cli reads. If Codex runs an older version, set the variable. | Yes |
+| Codex | The one version folder in `$HOME/.codex/plugins/cache/pstack-claude/pstack/`. Codex keeps a single version of each plugin and replaces it on each `codex plugin add` and `codex plugin marketplace upgrade`, downgrades included, so that folder is the version Codex runs. Codex records the version nowhere else. `config.toml` holds only `enabled = true`, and `.codex-marketplace-install.json` in the marketplace snapshot holds the marketplace's git revision. If Claude Code also has pstack, its install record wins, so set the variable when the two run different versions. | Yes |
 | Pi | Set `JSTACK_PSTACK_DIR=$HOME/.pi/agent/git/github.com/michael-denyer/pstack-claude/plugins/pstack` | Yes |
 | GitHub Copilot | Set `JSTACK_PSTACK_DIR=$HOME/.copilot/installed-plugins/pstack-claude/pstack`, the folder pstack-claude's Copilot smoke test checks | Untested |
 | Muse | Set `JSTACK_PSTACK_DIR` to `plugins/pstack` in your pstack-claude clone. After a `git pull` there, run `muse plugins update pstack` so Muse loads the same version. | Yes |
