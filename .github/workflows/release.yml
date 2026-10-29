@@ -8,7 +8,7 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Installs pull main, so each version that reaches main gets a tag and release to pin or compare against.
       - run: |
           v="v$(node -p 'require("./package.json").version')"
