@@ -15,14 +15,14 @@ The config dir is `$JSTACK_CONFIG`, or `.jstack` in the home directory. It belon
 │   │                                      to ../../../02-orgs/<org>/01-standard/<f>.md, plus real
 │   │                                      files with layer repo.standard
 │   └── 02-overrides/*.md                layer repo.overrides
-└── layers.json
+└── config.json
 ```
 
-Each folder's number is its rank among its siblings, so the tree read top to bottom is the cascade order, lowest first. A later layer wins, as in CSS cascade layers, so the operator's `02-overrides/` files sit above the team files they change. The order is fixed. `check` reports a `layers` key in `layers.json`, and a config folder that still uses the unnumbered names `user/`, `orgs/` or `repos/`, and names the rename.
+Each folder's number is its rank among its siblings, so the tree read top to bottom is the cascade order, lowest first. A later layer wins, as in CSS cascade layers, so the operator's `02-overrides/` files sit above the team files they change. The order is fixed. `check` reports a `layers` key in `config.json`, and a config folder that still uses the unnumbered names `user/`, `orgs/` or `repos/`, and names the rename. A config dir that still holds the older `layers.json` fails with the rename to `config.json`.
 
 Each org standard file exists once, and each repo's `01-team/` folder links to it, so two repos cannot drift apart on an org rule.
 
-## layers.json
+## config.json
 
 ```json
 {

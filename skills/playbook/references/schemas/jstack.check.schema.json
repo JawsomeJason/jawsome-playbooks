@@ -42,6 +42,6 @@
       "required": ["status", "lines"],
       "properties": { "status": { "enum": ["ok", "failed", "skipped"] }, "lines": { "type": "array", "items": { "type": "string" } } }
     },
-    "recorded": { "type": "boolean", "description": "True when this run wrote the checked pstack version into layers.json." }
+    "recorded": { "type": "boolean", "description": "True when this run wrote the checked pstack version into config.json." }
   }
 }

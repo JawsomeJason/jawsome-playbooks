@@ -11,9 +11,9 @@ mkdir -p "$CONFIG/03-repos/$REPO/01-team" "$CONFIG/03-repos/$REPO/02-overrides"
 
 `mkdir -p` leaves existing folders and their files alone.
 
-## Create layers.json when it is missing
+## Create config.json when it is missing
 
-Create `layers.json` only when it is missing:
+Create `config.json` only when it is missing:
 
 ```json
 {
@@ -60,7 +60,7 @@ mkdir -p "$MAIN/.agents"
 
 When `.agents/playbooks` already exists and is not that link, stop and show the operator what is there. It may hold the repo's own tracked playbooks, and replacing it would delete their work.
 
-Record the main checkout as `repos.<repo>.checkout` in `layers.json`, with the diff shown first, as for any other change to the file. `jstack-cli doctor` reads it to find the checkout from any directory.
+Record the main checkout as `repos.<repo>.checkout` in `config.json`, with the diff shown first, as for any other change to the file. `jstack-cli doctor` reads it to find the checkout from any directory.
 
 Keep the link out of the repo's status without touching its tracked `.gitignore`:
 

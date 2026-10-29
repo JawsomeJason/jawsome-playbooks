@@ -31,7 +31,7 @@
     "playbook": { "type": "string" },
     "repo": { "type": ["string", "null"], "description": "Repo key: the name part of the origin remote, or the --repo value. null outside a repo." },
     "owner": { "type": ["string", "null"], "description": "Owner part of the origin remote. null when unknown." },
-    "org": { "type": ["string", "null"], "description": "The layers.json orgs entry that owns the repo. null when none does." },
+    "org": { "type": ["string", "null"], "description": "The config.json orgs entry that owns the repo. null when none does." },
     "pstack": { "type": ["string", "null"], "description": "pstack version the bundled playbooks came from, from the plugin manifest or a folder named like a version. null when neither gives one." },
     "steps": {
       "type": "array",
