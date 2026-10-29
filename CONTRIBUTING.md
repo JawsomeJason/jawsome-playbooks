@@ -37,7 +37,7 @@ Each harness reads its own manifest:
 - Pi reads the `pi` field of `package.json`.
 - Muse reads `.muse-plugin/`.
 
-Five files carry the version: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`, `.muse-plugin/plugin.json`, and `package.json`. Change all five together. Keep the repo free of symlinks, because Muse refuses to install a plugin that contains one and Codex drops them when it copies a plugin.
+Five files carry the version: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`, `.muse-plugin/plugin.json`, and `package.json`. Change all five together. `tests/manifests.test.mjs` fails when they disagree. Keep the repo free of symlinks, because Muse refuses to install a plugin that contains one and Codex drops them when it copies a plugin.
 
 ## Write Conventional Commits
 
