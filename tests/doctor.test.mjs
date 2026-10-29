@@ -11,7 +11,7 @@ const JSTACK_MARKET = { name: 'jstack', source: 'github', repo: 'JawsomeJason/js
 /**
  * A healthy jstack install in a fake home: a stub `claude` on PATH that logs every call and lists `plugins`, jstack-cli
  * and Java's `jstack` on PATH, the mode skill linked into ~/.claude/skills, and the web checkout recorded in
- * layers.json with its team link and exclude line. Tests remove one piece at a time.
+ * config.json with its team link and exclude line. Tests remove one piece at a time.
  */
 function doctorWorld({ plugins = [JSTACK_PLUGIN], marketplaces = [JSTACK_MARKET], claude = true, ...opts } = {}) {
   const w = world(opts);
@@ -36,8 +36,8 @@ esac
   writeFileSync(join(bin, 'jstack'), '#!/bin/sh\necho java\n');
   chmodSync(join(bin, 'jstack'), 0o755);
   symlinkSync(BIN, join(bin, 'jstack-cli'));
-  const layers = JSON.parse(readFileSync(join(w.config, 'layers.json'), 'utf8'));
-  if (w.repo) writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...layers, pstack: '0.9.0', repos: { web: { checkout: w.repo } } }, null, 2));
+  const layers = JSON.parse(readFileSync(join(w.config, 'config.json'), 'utf8'));
+  if (w.repo) writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...layers, pstack: '0.9.0', repos: { web: { checkout: w.repo } } }, null, 2));
   mkdirSync(join(w.config, 'mode', 'tester-mode'), { recursive: true });
   writeFileSync(join(w.config, 'mode', 'tester-mode', 'SKILL.md'), '---\nname: tester-mode\n---\n');
   mkdirSync(join(w.home, '.claude', 'skills'), { recursive: true });
@@ -53,7 +53,7 @@ const HEALTHY = (w) => `✓ pstack-claude 1.0.0: ${PSTACK}
 ✓ jstack 0.1.0 installed in Claude Code (user scope)
 ✓ jstack-cli: ${w.bin}/jstack-cli -> ${realpathSync(BIN)}
 - jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
-✓ config ${w.config}: layers.json parses, handle tester
+✓ config ${w.config}: config.json parses, handle tester
 ✓ mode skill ${w.config}/mode/tester-mode is linked into ${w.home}/.claude/skills
 ✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/03-repos/web/01-team, and ${w.repo}/.git/info/exclude hides it
 ✓ jstack-cli check --repo web passed
@@ -62,13 +62,13 @@ doctor passed
 
 test('doctor passes a healthy install, only reads, and writes nothing', () => {
   const w = doctorWorld();
-  const before = readFileSync(join(w.config, 'layers.json'), 'utf8');
+  const before = readFileSync(join(w.config, 'config.json'), 'utf8');
   const r = w.doctor();
   assert.equal(r.stderr, '');
   assert.equal(r.stdout, HEALTHY(w));
   assert.equal(r.status, 0);
   assert.equal(w.calls(), 'plugin list --json\n');
-  assert.equal(readFileSync(join(w.config, 'layers.json'), 'utf8'), before, 'check runs pinned, so it records no pstack version');
+  assert.equal(readFileSync(join(w.config, 'config.json'), 'utf8'), before, 'check runs pinned, so it records no pstack version');
 });
 
 /** Removes the jstack plugin, jstack-cli, the mode link, the team link, and the exclude line from a healthy world. */
@@ -95,7 +95,7 @@ test('each failing check prints the exact commands that fix it, and doctor exits
     ln -s ${realpathSync(BIN)} ${w.home}/.local/bin/jstack-cli
     add ${w.home}/.local/bin to PATH
 - jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
-✓ config ${w.config}: layers.json parses, handle tester
+✓ config ${w.config}: config.json parses, handle tester
 ✗ mode skill ${w.config}/mode/tester-mode is not linked into any skills folder
     ln -s ${w.config}/mode/tester-mode ${w.home}/.claude/skills/tester-mode
 ✗ web: ${w.repo}/.agents/playbooks is missing; ${w.repo}/.git/info/exclude does not hide /.agents/playbooks
@@ -172,11 +172,11 @@ test('a missing config dir fails and names the setup command', () => {
 
 test('a repo with no known checkout is info, and the current checkout counts as known', () => {
   const w = doctorWorld();
-  const layers = JSON.parse(readFileSync(join(w.config, 'layers.json'), 'utf8'));
+  const layers = JSON.parse(readFileSync(join(w.config, 'config.json'), 'utf8'));
   delete layers.repos;
-  writeFileSync(join(w.config, 'layers.json'), JSON.stringify(layers));
+  writeFileSync(join(w.config, 'config.json'), JSON.stringify(layers));
   const outside = w.doctor();
-  assert.ok(outside.stdout.includes('- web: no checkout known; set repos.web.checkout in layers.json, or run doctor from the checkout\n'), outside.stdout);
+  assert.ok(outside.stdout.includes('- web: no checkout known; set repos.web.checkout in config.json, or run doctor from the checkout\n'), outside.stdout);
   assert.equal(outside.status, 0);
   const inside = w.doctor([], { cwd: w.repo });
   assert.ok(inside.stdout.includes(`✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/03-repos/web/01-team`), inside.stdout);

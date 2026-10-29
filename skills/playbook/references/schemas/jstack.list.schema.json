@@ -10,7 +10,7 @@
     "owner": { "type": ["string", "null"] },
     "org": { "type": ["string", "null"] },
     "pstack": { "type": ["string", "null"], "description": "pstack version, from the plugin manifest or a folder named like a version. null when neither gives one." },
-    "layers": { "type": "array", "items": { "type": "string" }, "description": "Cascade order from layers.json, lowest first." },
+    "layers": { "type": "array", "items": { "type": "string" }, "description": "Cascade order from config.json, lowest first." },
     "playbooks": {
       "type": "array",
       "items": {

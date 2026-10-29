@@ -6,9 +6,9 @@ import { test } from 'node:test';
 import { BIN, FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs';
 
 const OK_LINE = "Every project playbook matches this pstack's playbooks.";
-const readLayers = (config) => JSON.parse(readFileSync(join(config, 'layers.json'), 'utf8'));
+const readLayers = (config) => JSON.parse(readFileSync(join(config, 'config.json'), 'utf8'));
 const setPstack = (config, version) => {
-  const path = join(config, 'layers.json');
+  const path = join(config, 'config.json');
   writeFileSync(path, readFileSync(path, 'utf8').replace('"pstack": "1.0.0"', `"pstack": "${version}"`));
 };
 
@@ -400,9 +400,9 @@ test('a pstack checker failure with no jstack problems says so in the last line'
 test('check flags a layers key, since the numbered folders set the cascade order', () => {
   const w = world();
   const layers = readLayers(w.config);
-  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...layers, layers: ['repo.overrides', 'user'] }));
+  writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...layers, layers: ['repo.overrides', 'user'] }));
   const r = w.run(['check']);
-  assert.ok(lines(r.stdout).includes(`${w.config}/layers.json:1: "layers" is retired: the numbered folders set the cascade order, so delete the key`), r.stdout);
+  assert.ok(lines(r.stdout).includes(`${w.config}/config.json:1: "layers" is retired: the numbered folders set the cascade order, so delete the key`), r.stdout);
   assert.equal(r.status, 1);
   const out = JSON.parse(w.run(['playbook', 'list', '--json']).stdout);
   assert.deepEqual(out.layers, ['user', 'org.standard', 'org.overrides', 'repo.standard', 'repo.overrides']);
@@ -436,15 +436,15 @@ test('a dangling link in .agents/playbooks is reported, not a crash, and skips p
   assert.equal(r.status, 1);
 });
 
-test('a new pstack version that passes check is recorded in layers.json', () => {
+test('a new pstack version that passes check is recorded in config.json', () => {
   const w = world();
   setPstack(w.config, '0.9.0');
   const r = w.run(['playbook', 'compute', 'babysit']);
   assert.equal(r.stdout, BABYSIT);
   assert.equal(r.status, 0);
   assert.equal(
-    readFileSync(join(w.config, 'layers.json'), 'utf8'),
-    readFileSync(join(FIXTURES, 'config/layers.json'), 'utf8'),
+    readFileSync(join(w.config, 'config.json'), 'utf8'),
+    readFileSync(join(FIXTURES, 'config/config.json'), 'utf8'),
     'only the pstack value changes, so the user\'s formatting survives',
   );
 });
@@ -542,9 +542,9 @@ test('JSTACK_PSTACK_DIR wins over the install record', () => {
   assert.equal(r.status, 0);
 });
 
-test('check records the pstack it used in a new layers.json that has no pstack yet', () => {
+test('check records the pstack it used in a new config.json that has no pstack yet', () => {
   const w = cachedHome('1.9.0');
-  const path = join(w.config, 'layers.json');
+  const path = join(w.config, 'config.json');
   const { pstack, ...rest } = readLayers(w.config);
   writeFileSync(path, JSON.stringify(rest));
   const r = w.run(['check'], { env: { JSTACK_PSTACK_DIR: '' } });
@@ -673,7 +673,7 @@ test('compute logs one line per read only when telemetry is on', () => {
   const log = join(state, 'usage.jsonl');
   w.run(['playbook', 'compute', 'babysit'], { env: { JSTACK_STATE: state } });
   assert.equal(existsSync(log), false, 'telemetry is off by default');
-  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...readLayers(w.config), telemetry: true }));
+  writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...readLayers(w.config), telemetry: true }));
   w.run(['playbook', 'compute', 'babysit'], { env: { JSTACK_STATE: state } });
   w.run(['playbook', 'compute', 'triage', '--json'], { env: { JSTACK_STATE: state } });
   w.run(['playbook', 'compute', 'no-such-playbook'], { env: { JSTACK_STATE: state } });
@@ -687,8 +687,16 @@ test('compute logs one line per read only when telemetry is on', () => {
 
 test('a telemetry value that is not a boolean is a config error', () => {
   const w = world();
-  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...readLayers(w.config), telemetry: 'yes' }));
+  writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...readLayers(w.config), telemetry: 'yes' }));
   const r = w.run(['check']);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /"telemetry" must be true or false/);
+});
+
+test('a config dir that still has layers.json names the rename', () => {
+  const w = world();
+  renameSync(join(w.config, 'config.json'), join(w.config, 'layers.json'));
+  const r = w.run(['check']);
+  assert.equal(r.status, 2);
+  assert.equal(r.stderr, `${w.config}/layers.json: rename it to config.json\n`);
 });

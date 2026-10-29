@@ -1,7 +1,7 @@
 {
   "name": "jstack",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Layers personal and team playbooks over pstack's poteto-mode playbooks in a fixed cascade, and validates them against each pstack release. Pi package of the Claude Code plugin.",
   "license": "MIT",
   "keywords": ["pi-package", "pstack", "poteto-mode", "playbooks"],

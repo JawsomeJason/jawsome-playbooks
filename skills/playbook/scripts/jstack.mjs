@@ -404,8 +404,11 @@ const listDir = (dir) => {
 const mdFiles = (dir) => (dir ? listDir(dir).filter((f) => f.endsWith('.md') && isFile(join(dir, f))) : []);
 
 function readSettings(configDir) {
-  const path = join(configDir, 'layers.json');
-  if (!isFile(path)) return null;
+  const path = join(configDir, 'config.json');
+  if (!isFile(path)) {
+    if (isFile(join(configDir, 'layers.json'))) throw new UsageError(`${join(configDir, 'layers.json')}: rename it to config.json`);
+    return null;
+  }
   let raw;
   try {
     raw = JSON.parse(readFileSync(path, 'utf8'));
@@ -756,7 +759,7 @@ function analyze(ctx, { pstackCheck }) {
 const fileProblems = (files, key = 'problems') => files.flatMap((f) => [...f[key]].sort((a, b) => a.line - b.line).map((p) => ({ path: f.display, ...p })));
 
 const needsRecord = (ctx) => !ctx.pinned && ctx.settings && ctx.pstack.version && ctx.settings.pstack !== ctx.pstack.version;
-// Swaps only the version text, so the user's own formatting of layers.json survives.
+// Swaps only the version text, so the user's own formatting of config.json survives.
 function record(ctx) {
   const text = readFileSync(ctx.settings.path, 'utf8');
   const value = JSON.stringify(ctx.pstack.version);
@@ -1102,10 +1105,10 @@ function checkConfig(h, configDir) {
     if (!(e instanceof UsageError)) throw e;
     return { finding: finding('config', 'fail', e.message, setup()) };
   }
-  if (!settings) return { finding: finding('config', 'fail', `${join(configDir, 'layers.json')} is missing`, setup()) };
+  if (!settings) return { finding: finding('config', 'fail', `${join(configDir, 'config.json')} is missing`, setup()) };
   const { handle } = settings.raw;
   if (typeof handle !== 'string' || !handle) return { settings, finding: finding('config', 'fail', `${settings.path} has no handle`, setup()) };
-  return { settings, handle, finding: finding('config', 'ok', `config ${configDir}: layers.json parses, handle ${handle}`) };
+  return { settings, handle, finding: finding('config', 'ok', `config ${configDir}: config.json parses, handle ${handle}`) };
 }
 
 function checkMode(h, configDir, handle) {
@@ -1124,12 +1127,12 @@ function checkMode(h, configDir, handle) {
   return finding('mode', 'fail', message, { fixes });
 }
 
-/** One repo's team link and exclude line, in the checkout layers.json records or else the current one. */
+/** One repo's team link and exclude line, in the checkout config.json records or else the current one. */
 function checkRepo(h, configDir, settings, name, here) {
   const id = `repo:${name}`;
   const recorded = settings.repos[name]?.checkout;
   const path = recorded ?? (here?.name === name ? here.root : null);
-  if (!path) return { finding: finding(id, 'info', `${name}: no checkout known; set repos.${name}.checkout in layers.json, or run doctor from the checkout`) };
+  if (!path) return { finding: finding(id, 'info', `${name}: no checkout known; set repos.${name}.checkout in config.json, or run doctor from the checkout`) };
   const checkout = isDir(path) ? findCheckout(path) : null;
   if (!checkout) return { finding: finding(id, 'fail', `${name}: ${path} is not a git checkout`, { fixes: h.fixes(5, { run: false }) }) };
   const { root } = checkout;
