@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const USAGE = `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook compute <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       jstack-cli playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli doctor [--fix | --json]`;
 
@@ -707,9 +708,13 @@ function configStems(ctx) {
   return stems;
 }
 
+function readBundled(ctx) {
+  const dir = join(ctx.pstack.dir, PLAYBOOKS);
+  return new Map(mdFiles(dir).map((f) => [basename(f, '.md'), parsePlaybook(readFileSync(join(dir, f), 'utf8'))]));
+}
+
 function analyze(ctx, { pstackCheck }) {
-  const bundledDir = join(ctx.pstack.dir, PLAYBOOKS);
-  const bundled = new Map(mdFiles(bundledDir).map((f) => [basename(f, '.md'), parsePlaybook(readFileSync(join(bundledDir, f), 'utf8'))]));
+  const bundled = readBundled(ctx);
   const files = collectFiles(ctx);
   const playbooks = cascade(bundled, files.active, ctx.order);
   const layerFiles = [...files.active, ...files.inactive];
@@ -833,6 +838,60 @@ function runCompute(ctx, opts, name) {
       pstackCheck: analysis.pstackCheck,
     },
     status,
+  };
+}
+
+/** The file in `layer` that holds edits to `name`, or the path a new one takes. */
+function editTarget(ctx, files, layer, name) {
+  const existing = files.find((f) => f.layer === layer && touches(f, name));
+  if (existing) return { path: existing.display, exists: true };
+  const { repo } = ctx;
+  if (layer === 'repo.standard') {
+    if (!repo.teamDir) return { path: null, exists: false };
+    const file = lexists(join(repo.teamDir, `${name}.md`)) ? `${repo.name}-${name}.md` : `${name}.md`;
+    return { path: repo.teamDisplay(file), exists: false };
+  }
+  const dir = layer === 'org.standard' ? repo.org && join(ctx.configDir, 'orgs', repo.org, 'standard') : LAYERS[layer].dir(ctx);
+  return { path: dir ? join(dir, `${name}.md`) : null, exists: false };
+}
+
+/** Why an edit in `layer` cannot anchor on `quote`, judged against the step as the layers below it leave it. */
+function anchorProblem(ctx, bundled, layer, name, quote, origin) {
+  if (layer === origin) return 'this layer wrote the step; change its text there';
+  const below = ctx.order.slice(0, ctx.order.indexOf(layer));
+  const pb = cascade(bundled, collectFiles(ctx).active.filter((f) => below.includes(f.layer)), below).get(name);
+  if (!pb) return 'no layer below this one defines the playbook';
+  const found = locate(pb, quote, LAYERS[layer].team);
+  return found.step ? null : FAILURES[found.fail].message(quote, found.steps);
+}
+
+function runLocate(ctx, opts, name, quote) {
+  const bundled = readBundled(ctx);
+  const files = collectFiles(ctx).active;
+  const pb = cascade(bundled, files, ctx.order).get(name);
+  if (!pb) throw new UsageError(`no playbook named ${name}`);
+  const found = locate(pb, quote, false);
+  if (!found.step) return { out: FAILURES[found.fail].message(quote, found.steps), status: 1 };
+  const { step } = found;
+  const layers = ctx.order.map((layer) => {
+    const target = editTarget(ctx, files, layer, name);
+    const problem = target.path ? anchorProblem(ctx, bundled, layer, name, quote, step.origin) : `no ${layer.split('.')[0]} for this checkout`;
+    return { layer, ...target, problem };
+  });
+  const n = pb.steps.indexOf(step) + 1;
+  if (opts.json) {
+    const { repo } = ctx;
+    const head = { playbook: name, repo: repo.name, owner: repo.owner, org: repo.org, pstack: ctx.pstack.version };
+    return { out: { ...head, step: n, text: effective(step), origin: step.origin, touched: step.touched, layers }, status: 0 };
+  }
+  const line = (l) => `- ${l.layer}: ${l.path ?? '(none)'} (${[l.exists ? 'exists' : 'new', l.problem].filter(Boolean).join('; ')})`;
+  return {
+    out: [
+      `# ${name} step ${n} (${headerParts(ctx).join(' · ')})`,
+      `${display(step)}   [${[step.origin, ...step.touched].join(' ~ ')}]`,
+      ['Write the edit in:', ...layers.map(line)].join('\n'),
+    ].join('\n\n'),
+    status: 0,
   };
 }
 
@@ -1166,6 +1225,7 @@ function runDoctor(opts) {
 const COMMANDS = {
   'playbook list': { arity: 0, run: (opts) => runList(loadContext(opts), opts) },
   'playbook compute': { arity: 1, run: (opts, [name]) => runCompute(loadContext(opts), opts, name) },
+  'playbook locate': { arity: 2, run: (opts, [name, quote]) => runLocate(loadContext(opts), opts, name, quote) },
   check: { arity: 0, run: (opts) => runCheck(loadContext(opts), opts) },
   doctor: { arity: 0, run: (opts) => runDoctor(opts) },
 };
