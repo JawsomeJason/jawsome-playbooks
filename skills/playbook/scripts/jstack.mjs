@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const USAGE = `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook compute <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]`;
+       jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       jstack-cli doctor [--fix | --json]`;
 
 class UsageError extends Error {
   constructor(message, { usage = false } = {}) {
@@ -416,7 +418,12 @@ function readSettings(configDir) {
   for (const [org, entry] of Object.entries(orgs)) {
     if (!Array.isArray(entry?.owners) || !entry.owners.every((o) => typeof o === 'string')) throw bad(`orgs.${org}.owners must be an array of strings`);
   }
-  return { path, raw, pstack: raw.pstack ?? null, layers: raw.layers ?? DEFAULT_ORDER, orgs };
+  const repos = raw.repos ?? {};
+  if (typeof repos !== 'object' || Array.isArray(repos)) throw bad('"repos" must be an object');
+  for (const [repo, entry] of Object.entries(repos)) {
+    if (entry?.checkout !== undefined && typeof entry.checkout !== 'string') throw bad(`repos.${repo}.checkout must be a path`);
+  }
+  return { path, raw, pstack: raw.pstack ?? null, layers: raw.layers ?? DEFAULT_ORDER, orgs, repos };
 }
 
 const gitOut = (cwd, args) => {
@@ -568,8 +575,10 @@ function resolvePstack(flag) {
   return pick;
 }
 
+const configDirPath = () => resolve(process.env.JSTACK_CONFIG || join(homedir(), '.jstack'));
+
 function loadContext(opts) {
-  const configDir = resolve(process.env.JSTACK_CONFIG || join(homedir(), '.jstack'));
+  const configDir = configDirPath();
   const settings = readSettings(configDir);
   const configProblems = [];
   for (const layer of settings?.layers ?? []) {
@@ -861,18 +870,313 @@ function runList(ctx, opts) {
   return { out: lines.map((l) => l.trimEnd()).join('\n'), status: 0 };
 }
 
+const SCRIPT = fileURLToPath(import.meta.url);
+const README = fileURLToPath(new URL('../../../README.md', import.meta.url));
+const SELF_BIN = fileURLToPath(new URL('../../../bin/jstack-cli', import.meta.url));
+const MARKS = { ok: '✓', fail: '✗', info: '-' };
+const TEAM_EXCLUDE = '/.agents/playbooks';
+
+const shellQuote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replaceAll("'", "'\\''")}'`);
+const sh = (...words) => words.map(shellQuote).join(' ');
+const finding = (id, status, message, { details = [], fixes = [] } = {}) => ({ id, status, message, details, fixes });
+const runFix = (command) => ({ command, run: true });
+const showFix = (command) => ({ command, run: false });
+const realOr = (path) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
+};
+
+function onPath(name) {
+  for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    const path = join(dir, name);
+    try {
+      accessSync(path, constants.X_OK);
+      if (isFile(path)) return path;
+    } catch {}
+  }
+  return null;
+}
+
+/** True when the command at `path` resolves to the bin/jstack-cli of a jstack checkout or install. */
+const isJstack = (path) => {
+  const real = realOr(path);
+  return Boolean(real) && isFile(join(dirname(real), '..', 'skills', 'playbook', 'scripts', 'jstack.mjs'));
+};
+
+/** The `| Harness |` table rows of README install step `step`, as { harness, cell } with the Commands cell. */
+function readmeRows(step) {
+  let text;
+  try {
+    text = readFileSync(README, 'utf8');
+  } catch {
+    return null;
+  }
+  const lines = (text.split(/^### /m).find((s) => s.startsWith(`${step}.`)) ?? '').split('\n');
+  const header = lines.findIndex((line) => /^\|\s*Harness\s*\|/.test(line));
+  if (header === -1) return null;
+  const rows = [];
+  for (const line of lines.slice(header + 2)) {
+    if (!line.startsWith('|')) break;
+    const [, harness, cell] = line.split('|').map((c) => c.trim());
+    rows.push({ harness, cell });
+  }
+  return rows;
+}
+
+/**
+ * The operator's harness, as far as doctor can drive it. With `claude` on PATH, fixes are Claude Code's own
+ * commands; every other harness gets each README row printed, because jstack cannot run its installer.
+ */
+function harnessOf(home) {
+  const claude = onPath('claude');
+  const claudeJson = (args) => {
+    const r = spawnSync(claude, args, { encoding: 'utf8' });
+    try {
+      return r.status === 0 ? JSON.parse(r.stdout) : null;
+    } catch {
+      return null;
+    }
+  };
+  let marketplaces;
+  const knownMarketplaces = () => (marketplaces ??= new Set((claudeJson(['plugin', 'marketplace', 'list', '--json']) ?? []).map((m) => m.name)));
+  const fixes = (step, { run }) => {
+    const rows = readmeRows(step);
+    if (!rows) return [showFix('see https://github.com/JawsomeJason/jstack#install-and-set-up-jstack')];
+    if (!claude) return rows.map((r) => showFix(`${r.harness}: ${r.cell.replaceAll('`', '')}`));
+    const commands = [...(rows.find((r) => r.harness === 'Claude Code')?.cell ?? '').matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    const market = commands.map((c) => /^claude plugin install \S+@(\S+)/.exec(c)?.[1]).find(Boolean);
+    const added = run && market && knownMarketplaces().has(market);
+    return commands.filter((c) => !(added && c.startsWith('claude plugin marketplace add '))).map((command) => ({ command, run }));
+  };
+  return { home, claude, claudeJson, fixes };
+}
+
+function checkPstack(h) {
+  try {
+    const { dir, version } = resolvePstack(null);
+    return { dir, finding: finding('pstack', 'ok', `pstack-claude ${version}: ${dir}`) };
+  } catch (e) {
+    if (!(e instanceof UsageError)) throw e;
+    const env = process.env.JSTACK_PSTACK_DIR;
+    if (env) return { finding: finding('pstack', 'fail', `JSTACK_PSTACK_DIR=${env} holds no pstack`, { fixes: [showFix('unset JSTACK_PSTACK_DIR, or set it to the folder that holds skills/poteto-mode')] }) };
+    return { finding: finding('pstack', 'fail', 'pstack-claude not found', { fixes: h.fixes(1, { run: true }) }) };
+  }
+}
+
+function checkPlugin(h) {
+  if (h.claude) {
+    const plugins = h.claudeJson(['plugin', 'list', '--json']);
+    if (!Array.isArray(plugins)) return finding('plugin', 'fail', 'claude plugin list --json failed', { fixes: [showFix('claude plugin list --json')] });
+    const jstack = plugins.find((p) => typeof p.id === 'string' && p.id.startsWith('jstack@'));
+    if (jstack) return finding('plugin', 'ok', `jstack ${jstack.version} installed in Claude Code (${jstack.scope} scope)`);
+    return finding('plugin', 'fail', 'jstack is not installed in Claude Code', { fixes: h.fixes(2, { run: true }) });
+  }
+  for (const plugins of pluginDirs()) {
+    const path = join(plugins, 'installed_plugins.json');
+    let record;
+    try {
+      record = JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+      continue;
+    }
+    const [, installs] = Object.entries(record?.plugins ?? {}).find(([key]) => key.startsWith('jstack@')) ?? [];
+    if (Array.isArray(installs) && installs.length) return finding('plugin', 'ok', `jstack ${installs[0].version} in ${path}`);
+  }
+  return finding('plugin', 'fail', 'jstack is not installed in any harness install record', { fixes: h.fixes(2, { run: false }) });
+}
+
+function checkCommands(h) {
+  const clone = join(h.home, '.claude', 'plugins', 'marketplaces', 'jstack', 'bin', 'jstack-cli');
+  const source = h.claude && isFile(clone) ? clone : SELF_BIN;
+  const binDir = join(h.home, '.local', 'bin');
+  const dest = join(binDir, 'jstack-cli');
+  const link = sh('ln', '-s', source, dest);
+  const out = [];
+  const cli = onPath('jstack-cli');
+  if (!cli) {
+    const fixes = lexists(dest)
+      ? []
+      : [...(isDir(binDir) ? [] : [runFix(sh('mkdir', '-p', binDir))]), runFix(link)];
+    if (!(process.env.PATH ?? '').split(delimiter).includes(binDir)) fixes.push(showFix(`add ${binDir} to PATH`));
+    out.push(finding('cli', 'fail', 'jstack-cli is not on PATH', { fixes }));
+  } else if (!isJstack(cli)) {
+    out.push(finding('cli', 'fail', `jstack-cli on PATH is ${cli}, which is not jstack's`, { fixes: [showFix(`move ${cli} aside, then: ${link}`)] }));
+  } else {
+    const real = realOr(cli);
+    out.push(finding('cli', 'ok', `jstack-cli: ${cli}${real === cli ? '' : ` -> ${real}`}`));
+  }
+  const java = onPath('jstack');
+  if (java && !isJstack(java)) out.push(finding('jstack', 'info', `jstack on PATH is ${java}, not jstack-cli; type jstack-cli to run jstack`));
+  return out;
+}
+
+function checkConfig(h, configDir) {
+  const setup = () => ({ fixes: h.fixes(5, { run: false }) });
+  if (!isDir(configDir)) return { finding: finding('config', 'fail', `no config dir at ${configDir}`, setup()) };
+  let settings;
+  try {
+    settings = readSettings(configDir);
+  } catch (e) {
+    if (!(e instanceof UsageError)) throw e;
+    return { finding: finding('config', 'fail', e.message, setup()) };
+  }
+  if (!settings) return { finding: finding('config', 'fail', `${join(configDir, 'layers.json')} is missing`, setup()) };
+  const { handle } = settings.raw;
+  if (typeof handle !== 'string' || !handle) return { settings, finding: finding('config', 'fail', `${settings.path} has no handle`, setup()) };
+  return { settings, handle, finding: finding('config', 'ok', `config ${configDir}: layers.json parses, handle ${handle}`) };
+}
+
+function checkMode(h, configDir, handle) {
+  const name = `${handle}-mode`;
+  const modeDir = join(configDir, 'mode', name);
+  if (!isFile(join(modeDir, 'SKILL.md'))) return finding('mode', 'fail', `${modeDir}/SKILL.md is missing`, { fixes: h.fixes(5, { run: false }) });
+  const skillDirs = listDir(h.home).filter((e) => e.startsWith('.')).map((dot) => join(h.home, dot, 'skills')).filter(isDir);
+  const linked = skillDirs.filter((dir) => realOr(join(dir, name)) === realOr(modeDir));
+  if (linked.length) return finding('mode', 'ok', `mode skill ${modeDir} is linked into ${linked.join(', ')}`);
+  const message = `mode skill ${modeDir} is not linked into any skills folder`;
+  if (!h.claude) return finding('mode', 'fail', message, { fixes: [showFix(`ln -s ${shellQuote(modeDir)} <skills folder your harness loads>/${name}`)] });
+  const dir = join(h.home, '.claude', 'skills');
+  const dest = join(dir, name);
+  const link = sh('ln', '-s', modeDir, dest);
+  const fixes = lexists(dest) ? [showFix(`move ${dest} aside, then: ${link}`)] : [...(isDir(dir) ? [] : [runFix(sh('mkdir', '-p', dir))]), runFix(link)];
+  return finding('mode', 'fail', message, { fixes });
+}
+
+/** One repo's team link and exclude line, in the checkout layers.json records or else the current one. */
+function checkRepo(h, configDir, settings, name, here) {
+  const id = `repo:${name}`;
+  const recorded = settings.repos[name]?.checkout;
+  const path = recorded ?? (here?.name === name ? here.root : null);
+  if (!path) return { finding: finding(id, 'info', `${name}: no checkout known; set repos.${name}.checkout in layers.json, or run doctor from the checkout`) };
+  const checkout = isDir(path) ? findCheckout(path) : null;
+  if (!checkout) return { finding: finding(id, 'fail', `${name}: ${path} is not a git checkout`, { fixes: h.fixes(5, { run: false }) }) };
+  const { root } = checkout;
+  const team = join(configDir, 'repos', name, 'team');
+  const link = join(root, '.agents', 'playbooks');
+  const exclude = join(gitOut(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'info', 'exclude');
+  const problems = [];
+  const fixes = [];
+  if (!lexists(link)) {
+    problems.push(`${link} is missing`);
+    if (!isDir(dirname(link))) fixes.push(runFix(sh('mkdir', '-p', dirname(link))));
+    fixes.push(runFix(sh('ln', '-s', team, link)));
+  } else if (realOr(link) !== realOr(team)) {
+    problems.push(`${link} does not link to ${team}`);
+    fixes.push(showFix(`move ${link} aside, since it may hold the repo's own playbooks, then: ${sh('ln', '-s', team, link)}`));
+  }
+  const excluded = isFile(exclude) && readFileSync(exclude, 'utf8').split('\n').includes(TEAM_EXCLUDE);
+  if (!excluded) {
+    problems.push(`${exclude} does not hide ${TEAM_EXCLUDE}`);
+    if (!isDir(dirname(exclude))) fixes.push(runFix(sh('mkdir', '-p', dirname(exclude))));
+    fixes.push(runFix(`echo ${TEAM_EXCLUDE} >> ${shellQuote(exclude)}`));
+  }
+  if (problems.length) return { root, finding: finding(id, 'fail', `${name}: ${problems.join('; ')}`, { fixes }) };
+  return { root, finding: finding(id, 'ok', `${name}: ${link} links to ${team}, and ${exclude} hides it`) };
+}
+
+/** Runs `jstack-cli check` pinned to the resolved pstack, so it reads the same files and records nothing. */
+function checkRun(repo, cwd, pstackDir) {
+  const label = repo ? `jstack-cli check --repo ${repo}` : 'jstack-cli check';
+  const id = repo ? `check:${repo}` : 'check';
+  const args = [SCRIPT, 'check', '--json', ...(repo ? ['--repo', repo] : []), ...(pstackDir ? ['--pstack', pstackDir] : [])];
+  const r = spawnSync(process.execPath, args, { cwd, encoding: 'utf8' });
+  if (r.status === 0) return finding(id, 'ok', `${label} passed`);
+  if (r.status !== 1) return finding(id, 'fail', `${label} could not run`, { details: r.stderr.split('\n').filter(Boolean) });
+  const report = JSON.parse(r.stdout);
+  const details = [...report.problems.map(problemLine), ...(report.pstackCheck.status === 'failed' ? report.pstackCheck.lines : [])];
+  return finding(id, 'fail', `${label} failed`, { details, fixes: [showFix(`fix each line above, then run ${label}`)] });
+}
+
+function diagnose() {
+  const h = harnessOf(homedir());
+  const cwd = process.cwd();
+  const configDir = configDirPath();
+  const pstack = checkPstack(h);
+  const findings = [pstack.finding, checkPlugin(h), ...checkCommands(h)];
+  const config = checkConfig(h, configDir);
+  findings.push(config.finding);
+  if (config.handle) findings.push(checkMode(h, configDir, config.handle));
+  const repos = config.settings ? listDir(join(configDir, 'repos')).filter((name) => isDir(join(configDir, 'repos', name))) : [];
+  const here = findCheckout(cwd);
+  const runs = [];
+  for (const name of repos) {
+    const repo = checkRepo(h, configDir, config.settings, name, here);
+    findings.push(repo.finding);
+    runs.push(checkRun(name, repo.root ?? cwd, pstack.dir));
+  }
+  if (repos.length === 0) runs.push(checkRun(null, cwd, pstack.dir));
+  return [...findings, ...runs];
+}
+
+function renderDoctor(findings) {
+  const failed = findings.filter((f) => f.status === 'fail').length;
+  return [
+    ...findings.flatMap((f) => [`${MARKS[f.status]} ${f.message}`, ...[...f.details, ...f.fixes.map((x) => x.command)].map((l) => `    ${l}`)]),
+    failed ? `doctor failed: ${failed} ${failed === 1 ? 'problem' : 'problems'}` : 'doctor passed',
+  ].join('\n');
+}
+
+function ask(question) {
+  process.stdout.write(question);
+  const byte = Buffer.alloc(1);
+  let line = '';
+  for (;;) {
+    let n;
+    try {
+      n = readSync(0, byte, 0, 1, null);
+    } catch (e) {
+      if (e.code === 'EAGAIN') continue;
+      throw e;
+    }
+    if (n === 0 || byte[0] === 0x0a) return line.trim();
+    line += String.fromCharCode(byte[0]);
+  }
+}
+
+function applyFixes(findings) {
+  for (const f of findings.filter((x) => x.status === 'fail' && x.fixes.some((fix) => fix.run))) {
+    const commands = f.fixes.filter((fix) => fix.run).map((fix) => fix.command);
+    process.stdout.write(`\n${f.message}\n${commands.map((c) => `  ${c}\n`).join('')}`);
+    if (!/^y(es)?$/i.test(ask('run these? [y/N] '))) continue;
+    for (const command of commands) {
+      if (spawnSync('sh', ['-c', command], { stdio: 'inherit' }).status === 0) continue;
+      process.stdout.write(`failed: ${command}\n`);
+      break;
+    }
+  }
+}
+
+function runDoctor(opts) {
+  const findings = diagnose();
+  const status = (list) => (list.some((f) => f.status === 'fail') ? 1 : 0);
+  if (opts.json) return { out: { passed: status(findings) === 0, findings }, status: status(findings) };
+  const report = renderDoctor(findings);
+  const fixable = findings.some((f) => f.status === 'fail' && f.fixes.some((fix) => fix.run));
+  if (!opts.fix || !fixable) return { out: report, status: status(findings) };
+  if (!process.stdin.isTTY) return { out: `${report}\nfixes not run: no terminal to ask on`, status: status(findings) };
+  process.stdout.write(`${report}\n`);
+  applyFixes(findings);
+  const after = diagnose();
+  return { out: `\nafter fixes:\n${renderDoctor(after)}`, status: status(after) };
+}
+
 const COMMANDS = {
-  'playbook list': { arity: 0, run: (ctx, opts) => runList(ctx, opts) },
-  'playbook compute': { arity: 1, run: (ctx, opts, [name]) => runCompute(ctx, opts, name) },
-  check: { arity: 0, run: (ctx, opts) => runCheck(ctx, opts) },
+  'playbook list': { arity: 0, run: (opts) => runList(loadContext(opts), opts) },
+  'playbook compute': { arity: 1, run: (opts, [name]) => runCompute(loadContext(opts), opts, name) },
+  check: { arity: 0, run: (opts) => runCheck(loadContext(opts), opts) },
+  doctor: { arity: 0, run: (opts) => runDoctor(opts) },
 };
 
 function parseArgs(argv) {
-  const opts = { json: false, help: false, repo: null, pstack: null };
+  const opts = { json: false, fix: false, help: false, repo: null, pstack: null };
   const words = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--json') opts.json = true;
+    else if (arg === '--fix') opts.fix = true;
     else if (arg === '--help' || arg === '-h') opts.help = true;
     else if (arg === '--repo' || arg === '--pstack') {
       const value = argv[++i];
@@ -886,6 +1190,7 @@ function parseArgs(argv) {
   const command = COMMANDS[words.slice(0, split).join(' ')];
   const args = words.slice(split);
   if (!command || args.length !== command.arity) throw new UsageError('', { usage: true });
+  if (command === COMMANDS.doctor ? opts.repo || opts.pstack || (opts.fix && opts.json) : opts.fix) throw new UsageError('', { usage: true });
   return { opts, command, args };
 }
 
@@ -896,7 +1201,7 @@ function main(argv) {
       process.stdout.write(`${USAGE}\n`);
       return 0;
     }
-    const { out, status } = command.run(loadContext(opts), opts, args);
+    const { out, status } = command.run(opts, args);
     process.stdout.write(typeof out === 'string' ? `${out}\n` : `${JSON.stringify(out, null, 2)}\n`);
     return status;
   } catch (e) {
