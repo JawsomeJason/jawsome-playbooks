@@ -582,6 +582,61 @@ test('no pstack found is a usage error that names the variable to set', () => {
   assert.equal(r.status, 2);
 });
 
+test('locate names the step a quote finds and the file each layer would write an edit in', () => {
+  const w = world();
+  const r = w.run(['playbook', 'locate', 'babysit', 'Work the merge frontier']);
+  assert.equal(r.stderr, '');
+  assert.equal(
+    r.stdout,
+    `# babysit step 3 (web · acme-eng · pstack 1.0.0)
+
+**Work the merge frontier.** The lowest open PR matters first.   [pstack]
+
+Write the edit in:
+- user: ${w.config}/user/babysit.md (exists)
+- org.standard: .agents/playbooks/babysit.md (exists)
+- org.overrides: ${w.config}/orgs/acme/overrides/babysit.md (exists)
+- repo.standard: .agents/playbooks/web-babysit.md (new)
+- repo.overrides: ${w.config}/repos/web/overrides/babysit.md (exists)
+`,
+  );
+  assert.equal(r.status, 0);
+});
+
+test('locate checks the quote against each layer as the layers below it leave the step', () => {
+  const w = world();
+  const r = w.run(['playbook', 'locate', 'babysit', 'before the first push', '--json']);
+  assert.equal(r.status, 0);
+  assert.deepEqual(JSON.parse(r.stdout), {
+    playbook: 'babysit',
+    repo: 'web',
+    owner: 'acme-eng',
+    org: 'acme',
+    pstack: '1.0.0',
+    step: 4,
+    text: 'Read the trunk ruleset before the first push.',
+    origin: 'user',
+    touched: ['org.overrides'],
+    layers: [
+      { layer: 'user', path: join(w.config, 'user', 'babysit.md'), exists: true, problem: 'this layer wrote the step; change its text there' },
+      { layer: 'org.standard', path: '.agents/playbooks/babysit.md', exists: true, problem: 'team files may quote pstack only' },
+      { layer: 'org.overrides', path: join(w.config, 'orgs', 'acme', 'overrides', 'babysit.md'), exists: true, problem: null },
+      { layer: 'repo.standard', path: '.agents/playbooks/web-babysit.md', exists: false, problem: 'team files may quote pstack only' },
+      { layer: 'repo.overrides', path: join(w.config, 'repos', 'web', 'overrides', 'babysit.md'), exists: true, problem: null },
+    ],
+  });
+});
+
+test('locate exits 1 when the quote finds no step or more than one', () => {
+  const w = world();
+  const missing = w.run(['playbook', 'locate', 'babysit', 'no such words']);
+  assert.equal(missing.stdout, 'quote not found: "no such words"\n');
+  assert.equal(missing.status, 1);
+  const ambiguous = w.run(['playbook', 'locate', 'babysit', 'the']);
+  assert.match(ambiguous.stdout, /^quote matches steps .+; make it longer\n$/);
+  assert.equal(ambiguous.status, 1);
+});
+
 test('an unknown playbook and a bad command are usage errors', () => {
   const w = world();
   const unknown = w.run(['playbook', 'compute', 'nope']);
