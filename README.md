@@ -6,6 +6,8 @@ jstack keeps pstack's playbook format and edit grammar, adds no verbs, and never
 
 jstack ships three skills. The `playbook` skill runs `jstack-cli` for an agent. The `learn` skill turns a session's corrections into proposed layer edits and writes the ones you pick. The `setup` skill writes your `<handle>-mode` skill, scaffolds the config dir, and links team folders into your repos. You can rerun `setup` at any time.
 
+In Claude Code, the plugin's hook stops an agent from reading an installed pstack playbook file directly and names the `jstack-cli playbook compute` command to run instead. That file holds only pstack's steps, so reading it would skip your layers.
+
 - The [jstack-cli reference](skills/playbook/references/cli.md) lists the commands, flags, exit codes, and environment variables.
 - [Layers, files, and the cascade](skills/playbook/references/layers.md) describes the config dir, the layer file format, and how layers apply.
 - [CONTRIBUTING.md](CONTRIBUTING.md) lists the checks and the rules for changes.

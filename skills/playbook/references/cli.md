@@ -36,6 +36,7 @@ jstack-cli is `scripts/jstack.mjs` in this skill. It needs Node and nothing else
 | --- | --- | --- |
 | `JSTACK_CONFIG` | The config dir. | `.jstack` in the home directory. |
 | `JSTACK_PSTACK_DIR` | The pstack plugin folder, the one that holds `skills/poteto-mode/`. | The search order below. |
+| `JSTACK_STATE` | The folder that holds `usage.jsonl`, the read log that `telemetry` turns on. | `jstack` in `$XDG_STATE_HOME`, else in `.local/state` in the home directory. |
 
 jstack-cli picks the pstack folder in this order, and uses the first one that holds poteto-mode's playbooks:
 
@@ -70,6 +71,8 @@ These sections follow the steps, each only when it has entries, in this order:
 `pstack check-playbooks:` comes last, with pstack's own checker result, or `ok`. `--json` prints the same data, shaped by [schemas/jstack.compute.schema.json](schemas/jstack.compute.schema.json).
 
 When the installed pstack differs from the `pstack` in `layers.json`, `compute` runs `check` first. A pass records the new version. A failure stops with exit 1, because an upgrade that moved the quoted text would otherwise apply edits in the wrong place.
+
+With `"telemetry": true` in `layers.json`, `compute` appends one JSON line per playbook it finds to `usage.jsonl` in `JSTACK_STATE`: `ts`, `playbook`, `repo`, `org`, and `pstack`. The log stays on the machine, and a tool such as a usage counter reads it to tell which playbooks agents run. A failed write never fails the compute, because a read log must not block the work it records.
 
 ## locate
 
