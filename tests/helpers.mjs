@@ -52,7 +52,7 @@ export function world({ files = {}, links = {}, remote = 'git@example.com:acme-e
     writeFileSync(join(config, path), content);
   }
   // Muse refuses to install a plugin that contains a symlink, so the fixtures store none and this link is made here.
-  const teamLinks = { 'repos/web/team/babysit.md': '../../../orgs/acme/standard/babysit.md', ...links };
+  const teamLinks = { '03-repos/web/01-team/babysit.md': '../../../02-orgs/acme/01-standard/babysit.md', ...links };
   for (const [path, target] of Object.entries(teamLinks)) symlinkSync(target, join(config, path));
   const home = join(root, 'home');
   const outside = join(root, 'outside');
@@ -68,7 +68,7 @@ export function world({ files = {}, links = {}, remote = 'git@example.com:acme-e
     git(repo, ['add', '-A']);
     git(repo, ['commit', '-q', '-m', 'init']);
     mkdirSync(join(repo, '.agents'));
-    symlinkSync(join(config, 'repos', 'web', 'team'), join(repo, '.agents', 'playbooks'));
+    symlinkSync(join(config, '03-repos', 'web', '01-team'), join(repo, '.agents', 'playbooks'));
   }
   const run = (args, { cwd = repo ?? outside, env = {} } = {}) => {
     const r = spawnSync(process.execPath, [CLI, ...args], {

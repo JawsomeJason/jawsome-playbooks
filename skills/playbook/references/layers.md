@@ -6,18 +6,21 @@ The config dir is `$JSTACK_CONFIG`, or `.jstack` in the home directory. It belon
 
 ```
 <config>/
-├── layers.json
-├── user/*.md                      layer user
-├── orgs/<org>/standard/*.md       team files with layer org.standard
-├── orgs/<org>/overrides/*.md      layer org.overrides
-└── repos/<repo>/
-    ├── team/*.md                  what the repo's .agents/playbooks shows: per-file links
-    │                                to ../../../orgs/<org>/standard/<f>.md, plus real
-    │                                files with layer repo.standard
-    └── overrides/*.md             layer repo.overrides
+├── 01-user/*.md                         layer user
+├── 02-orgs/<org>/
+│   ├── 01-standard/*.md                 team files with layer org.standard
+│   └── 02-overrides/*.md                layer org.overrides
+├── 03-repos/<repo>/
+│   ├── 01-team/*.md                     what the repo's .agents/playbooks shows: per-file links
+│   │                                      to ../../../02-orgs/<org>/01-standard/<f>.md, plus real
+│   │                                      files with layer repo.standard
+│   └── 02-overrides/*.md                layer repo.overrides
+└── layers.json
 ```
 
-Each org standard file exists once, and each repo's `team/` folder links to it, so two repos cannot drift apart on an org rule.
+Each folder's number is its rank among its siblings, so the tree read top to bottom is the cascade order, lowest first. A later layer wins, as in CSS cascade layers, so the operator's `02-overrides/` files sit above the team files they change. The order is fixed. `check` reports a `layers` key in `layers.json`, and a config folder that still uses the unnumbered names `user/`, `orgs/` or `repos/`, and names the rename.
+
+Each org standard file exists once, and each repo's `01-team/` folder links to it, so two repos cannot drift apart on an org rule.
 
 ## layers.json
 
@@ -26,13 +29,11 @@ Each org standard file exists once, and each repo's `team/` folder links to it, 
   "handle": "sam",
   "modeTrigger": "manual",
   "pstack": "1.2.3",
-  "layers": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"],
   "orgs": { "acme": { "owners": ["acme-eng"] } },
   "repos": { "web": { "checkout": "/home/sam/code/web" } }
 }
 ```
 
-- `layers` is the cascade order, lowest first. A later layer wins, as in CSS cascade layers, so the operator's `org.overrides` and `repo.overrides` files sit above the team files they change. Without `layers`, jstack-cli uses the order above.
 - `orgs` maps an org name to the forge owners whose repos belong to it. A repo whose owner is in no list gets no org layers.
 - `pstack` is the version that the layers last passed `check` against. jstack-cli records it and never pins it.
 - `repos` maps a repo key to its main checkout. The `setup` skill records it when it links the repo, and `jstack-cli doctor` reads it to check the repo's link from any directory. The cascade does not read it.
@@ -64,13 +65,13 @@ source: proposed
 
 - The repo is the main checkout of the current directory, which jstack-cli finds through `git rev-parse --git-common-dir`. A worktree therefore resolves to the checkout that holds `.agents/playbooks`.
 - The repo key is the name part of `git remote get-url origin`, and the owner is the part before it. A repo with no `origin` remote uses the checkout folder's name as its key. `--repo <name>` overrides the key.
-- Team files come from `<main checkout>/.agents/playbooks/*.md` when that folder exists, at the top level only, as pstack reads it. Otherwise they come from `<config>/repos/<repo>/team/`.
-- The org is the `orgs` entry that lists the repo's owner. When no entry lists it and the team files come from the config dir, the org is the one whose `standard/` folder the team folder's links point into.
+- Team files come from `<main checkout>/.agents/playbooks/*.md` when that folder exists, at the top level only, as pstack reads it. Otherwise they come from `<config>/03-repos/<repo>/01-team/`.
+- The org is the `orgs` entry that lists the repo's owner. When no entry lists it and the team files come from the config dir, the org is the one whose `01-standard/` folder the team folder's links point into.
 
 ## Cascade
 
 1. The bundled playbook splits into steps. A line `N. ` at column 0 starts a step. The lines after it belong to that step until the next step, or until a blank line followed by a line with no indent. A playbook with no numbered steps takes each paragraph that opens with a bold lead sentence as a step. Other text is intro, and no quote may match in it.
-2. Each layer, in `layers` order, applies its files in name order, and applies each file's edits in line order. A file applies to a playbook when the playbook is in its `extends`, or when the file's stem names a playbook that pstack or a lower layer defines.
+2. Each layer, in cascade order, applies its files in name order, and applies each file's edits in line order. A file applies to a playbook when the playbook is in its `extends`, or when the file's stem names a playbook that pstack or a lower layer defines.
 3. Quotes match with whitespace collapsed, against the steps as the lower layers left them. Team files match only pstack's own text, because pstack's checker reads them without the other layers.
 4. `After` and `Before` insert a new step. `Replace` strikes the quoted words inside the step and adds the change text after them. `In` appends the change text to the step. A line with no verb becomes a note.
 5. Each step records its origin layer and every layer that edited it. An `In` or `Replace` from a layer above the step's origin is an override, and `compute` lists it so the agent can name it in its reply.

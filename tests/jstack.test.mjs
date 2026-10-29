@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { BIN, FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs';
@@ -130,9 +130,9 @@ ok
 });
 
 test('a team Replace on pstack text wins over a lower layer that replaced the same words', () => {
-  const team = readFileSync(join(FIXTURES, 'config/orgs/acme/standard/babysit.md'), 'utf8');
+  const team = readFileSync(join(FIXTURES, 'config/02-orgs/acme/01-standard/babysit.md'), 'utf8');
   const w = world({
-    files: { 'orgs/acme/standard/babysit.md': team + '- **Replace** "Babysitting never authorizes merging" Hand it to the release captain\n' },
+    files: { '02-orgs/acme/01-standard/babysit.md': team + '- **Replace** "Babysitting never authorizes merging" Hand it to the release captain\n' },
   });
   const r = w.run(['playbook', 'compute', 'babysit', '--json']);
   const out = JSON.parse(r.stdout);
@@ -174,7 +174,7 @@ not run: no .agents/playbooks
 
 const HANDOFFS = {
   files: {
-    'user/handoffs.md': `---
+    '01-user/handoffs.md': `---
 when: handing work between playbooks
 ---
 
@@ -185,7 +185,7 @@ when: handing work between playbooks
 5. Hand the frontier to Babysit once green.
 6. Run read-only checks per PR.
 `,
-    'repos/web/overrides/handoffs.md': `---
+    '03-repos/web/02-overrides/handoffs.md': `---
 when: handing work between web playbooks
 ---
 
@@ -216,9 +216,9 @@ Notes:
 - Then run web-release, or hand it to **Babysit**.   [repo.overrides]
 
 Problems:
-${w.config}/user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines
-${w.config}/user/handoffs.md:7: hands off to Babysat, which no layer or pstack defines
-${w.config}/user/handoffs.md:8: hands off to web-releas, which no layer or pstack defines
+${w.config}/01-user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines
+${w.config}/01-user/handoffs.md:7: hands off to Babysat, which no layer or pstack defines
+${w.config}/01-user/handoffs.md:8: hands off to web-releas, which no layer or pstack defines
 
 pstack check-playbooks:
 ok
@@ -237,9 +237,9 @@ test('check flags a layer handoff nothing defines, and leaves section names and 
   const r = w.run(['check']);
   assert.deepEqual(lines(r.stdout), [
     OK_LINE,
-    `${w.config}/user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines`,
-    `${w.config}/user/handoffs.md:7: hands off to Babysat, which no layer or pstack defines`,
-    `${w.config}/user/handoffs.md:8: hands off to web-releas, which no layer or pstack defines`,
+    `${w.config}/01-user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines`,
+    `${w.config}/01-user/handoffs.md:7: hands off to Babysat, which no layer or pstack defines`,
+    `${w.config}/01-user/handoffs.md:8: hands off to web-releas, which no layer or pstack defines`,
     'proposed: .agents/playbooks/babysit.md:5',
     'check failed: 3 problems against pstack 1.0.0',
   ]);
@@ -249,7 +249,7 @@ test('check flags a layer handoff nothing defines, and leaves section names and 
 test('a handoff to a playbook only another org defines is info, not a problem', () => {
   const w = world({
     files: {
-      'orgs/other/standard/syncing-a-ticket.md': `---
+      '02-orgs/other/01-standard/syncing-a-ticket.md': `---
 when: moving a ticket on
 layer: org.standard
 source: ruleset
@@ -257,7 +257,7 @@ source: ruleset
 
 1. Move the ticket to done.
 `,
-      'user/landing.md': `---
+      '01-user/landing.md': `---
 when: landing a PR
 ---
 
@@ -268,20 +268,20 @@ when: landing a PR
   const r = w.run(['check']);
   assert.deepEqual(lines(r.stdout), [
     OK_LINE,
-    `info: ${w.config}/user/landing.md:5: hands off to syncing-a-ticket, which only orgs/other/standard defines`,
+    `info: ${w.config}/01-user/landing.md:5: hands off to syncing-a-ticket, which only 02-orgs/other/01-standard defines`,
     'proposed: .agents/playbooks/babysit.md:5',
     'check passed: pstack 1.0.0',
   ]);
   assert.equal(r.status, 0);
   const json = JSON.parse(w.run(['check', '--json']).stdout);
   assert.deepEqual(json.problems, []);
-  assert.deepEqual(json.info, [{ path: `${w.config}/user/landing.md`, line: 5, message: 'hands off to syncing-a-ticket, which only orgs/other/standard defines' }]);
+  assert.deepEqual(json.info, [{ path: `${w.config}/01-user/landing.md`, line: 5, message: 'hands off to syncing-a-ticket, which only 02-orgs/other/01-standard defines' }]);
 });
 
 test('a handoff inside an edit is checked, but the pstack words it quotes are not', () => {
   const w = world({
     files: {
-      'user/feature.md': `---
+      '01-user/feature.md': `---
 extends: feature
 when: building a feature
 ---
@@ -291,7 +291,7 @@ when: building a feature
     },
   });
   const r = w.run(['check']);
-  assert.ok(lines(r.stdout).includes(`${w.config}/user/feature.md:6: hands off to Shiping, which no layer or pstack defines`), r.stdout);
+  assert.ok(lines(r.stdout).includes(`${w.config}/01-user/feature.md:6: hands off to Shiping, which no layer or pstack defines`), r.stdout);
   assert.ok(!r.stdout.includes('Nowhere'), r.stdout);
 });
 
@@ -330,7 +330,7 @@ check passed: pstack 1.0.0
 
 const BROKEN = {
   files: {
-    'user/broken.md': `---
+    '01-user/broken.md': `---
 extends: babysit, nope
 ---
 
@@ -338,14 +338,14 @@ extends: babysit, nope
 - **Replace** "stays out of every step" x
 - **After** "no such words" y
 `,
-    'user/solo.md': `---
+    '01-user/solo.md': `---
 when: a solo flow
 ---
 
 1. Do the thing.
 - **After** "Do the thing" again
 `,
-    'repos/web/team/bad-team.md': `---
+    '03-repos/web/01-team/bad-team.md': `---
 extends: babysit
 when: a bad team rule
 layer: repo.standard
@@ -353,7 +353,7 @@ layer: repo.standard
 
 - **In** "the trunk ruleset" z
 `,
-    'repos/web/team/triage.md': `---
+    '03-repos/web/01-team/triage.md': `---
 when: triaging in web
 layer: repo.standard
 source: ruleset
@@ -362,7 +362,7 @@ source: ruleset
 - **In** "Reproduce the bug." x
 `,
   },
-  links: { 'user/gone.md': '../nowhere.md' },
+  links: { '01-user/gone.md': '../nowhere.md' },
 };
 
 test('check reports every validator rule with path and line', () => {
@@ -371,13 +371,13 @@ test('check reports every validator rule with path and line', () => {
   const c = w.config;
   assert.deepEqual(lines(r.stdout).sort(), [
     OK_LINE,
-    `${c}/user/broken.md:1: missing when:`,
-    `${c}/user/broken.md:2: extends nope, which pstack 1.0.0 has no playbook for`,
-    `${c}/user/broken.md:5: quote matches steps 1 and 2; make it longer`,
-    `${c}/user/broken.md:6: quote is outside a numbered step`,
-    `${c}/user/broken.md:7: quote not found: "no such words"`,
-    `${c}/user/gone.md:1: broken link -> ../nowhere.md`,
-    `${c}/user/solo.md:6: standalone playbook cannot carry edits`,
+    `${c}/01-user/broken.md:1: missing when:`,
+    `${c}/01-user/broken.md:2: extends nope, which pstack 1.0.0 has no playbook for`,
+    `${c}/01-user/broken.md:5: quote matches steps 1 and 2; make it longer`,
+    `${c}/01-user/broken.md:6: quote is outside a numbered step`,
+    `${c}/01-user/broken.md:7: quote not found: "no such words"`,
+    `${c}/01-user/gone.md:1: broken link -> ../nowhere.md`,
+    `${c}/01-user/solo.md:6: standalone playbook cannot carry edits`,
     '.agents/playbooks/bad-team.md:1: team file needs layer: and source:',
     '.agents/playbooks/bad-team.md:7: team files may quote pstack only',
     '.agents/playbooks/triage.md:7: team files may quote pstack only',
@@ -397,13 +397,22 @@ test('a pstack checker failure with no jstack problems says so in the last line'
   assert.equal(r.status, 1);
 });
 
-test('check flags layers that layers.json does not declare', () => {
+test('check flags a layers key, since the numbered folders set the cascade order', () => {
   const w = world();
   const layers = readLayers(w.config);
-  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...layers, layers: ['user', 'team', 'org.standard', 'org.overrides', 'repo.overrides'] }));
+  writeFileSync(join(w.config, 'layers.json'), JSON.stringify({ ...layers, layers: ['repo.overrides', 'user'] }));
   const r = w.run(['check']);
-  assert.ok(lines(r.stdout).includes(`${w.config}/layers.json:1: unknown layer team`), r.stdout);
-  assert.ok(lines(r.stdout).includes('.agents/playbooks/web-release.md:4: unknown layer repo.standard'), r.stdout);
+  assert.ok(lines(r.stdout).includes(`${w.config}/layers.json:1: "layers" is retired: the numbered folders set the cascade order, so delete the key`), r.stdout);
+  assert.equal(r.status, 1);
+  const out = JSON.parse(w.run(['playbook', 'list', '--json']).stdout);
+  assert.deepEqual(out.layers, ['user', 'org.standard', 'org.overrides', 'repo.standard', 'repo.overrides']);
+});
+
+test('check names the rename for each unnumbered layer folder', () => {
+  const w = world();
+  renameSync(join(w.config, '01-user'), join(w.config, 'user'));
+  const r = w.run(['check']);
+  assert.ok(lines(r.stdout).includes(`${w.config}/user:1: rename user/ to 01-user/ (inside it: standard/ to 01-standard/, team/ to 01-team/, overrides/ to 02-overrides/)`), r.stdout);
   assert.equal(r.status, 1);
 });
 
@@ -412,16 +421,16 @@ test('compute still prints the cascade when its files have problems, and exits 1
   const r = w.run(['playbook', 'compute', 'babysit']);
   assert.match(r.stdout, /^# babysit \(web · acme-eng · pstack 1\.0\.0\)$/m);
   assert.match(r.stdout, /^Problems:$/m);
-  assert.ok(r.stdout.includes(`${w.config}/user/broken.md:5: quote matches steps 1 and 2; make it longer`), r.stdout);
-  assert.ok(r.stdout.includes(`${w.config}/user/gone.md:1: broken link -> ../nowhere.md`), r.stdout);
+  assert.ok(r.stdout.includes(`${w.config}/01-user/broken.md:5: quote matches steps 1 and 2; make it longer`), r.stdout);
+  assert.ok(r.stdout.includes(`${w.config}/01-user/gone.md:1: broken link -> ../nowhere.md`), r.stdout);
   assert.ok(!r.stdout.includes('solo.md'), 'problems in files that target other playbooks stay out');
   assert.equal(r.status, 1);
 });
 
 test('a dangling link in .agents/playbooks is reported, not a crash, and skips pstack\'s checker', () => {
-  const w = world({ links: { 'repos/web/team/stale.md': '../../../orgs/acme/standard/gone.md' } });
+  const w = world({ links: { '03-repos/web/01-team/stale.md': '../../../02-orgs/acme/01-standard/gone.md' } });
   const r = w.run(['playbook', 'compute', 'babysit']);
-  assert.ok(r.stdout.includes('.agents/playbooks/stale.md:1: broken link -> ../../../orgs/acme/standard/gone.md'), r.stdout);
+  assert.ok(r.stdout.includes('.agents/playbooks/stale.md:1: broken link -> ../../../02-orgs/acme/01-standard/gone.md'), r.stdout);
   assert.match(r.stdout, /pstack check-playbooks:\nnot run: broken link in \.agents\/playbooks\n$/);
   assert.match(r.stdout, /^1\. Check the team's merge calendar\./m);
   assert.equal(r.status, 1);
@@ -445,7 +454,7 @@ test('a new pstack version that fails check stops compute and records nothing', 
   setPstack(w.config, '0.9.0');
   const r = w.run(['playbook', 'compute', 'babysit']);
   assert.ok(!r.stdout.includes('# babysit'), r.stdout);
-  assert.ok((r.stdout + r.stderr).includes(`${w.config}/user/broken.md:7: quote not found: "no such words"`));
+  assert.ok((r.stdout + r.stderr).includes(`${w.config}/01-user/broken.md:7: quote not found: "no such words"`));
   assert.equal(r.status, 1);
   assert.equal(readLayers(w.config).pstack, '0.9.0');
 });
@@ -455,7 +464,7 @@ test('check --pstack checks another installed version by name or path without wr
     const w = world();
     const r = w.run(['check', '--pstack', pick]);
     const out = lines(r.stdout + r.stderr);
-    assert.ok(out.includes(`${w.config}/user/babysit.md:6: quote not found: "Babysitting never authorizes merging"`), r.stdout);
+    assert.ok(out.includes(`${w.config}/01-user/babysit.md:6: quote not found: "Babysitting never authorizes merging"`), r.stdout);
     assert.ok(out.includes('.agents/playbooks/babysit.md:9: quote not found: "Order is conflicts, then threads, then CI"'), r.stdout);
     assert.ok(out.includes('.agents/playbooks/babysit.md: "Order is conflicts, then threads, then CI" is not in any playbook it extends'), 'pstack 1.1.0 checker lines pass through');
     assert.equal(r.status, 1);
@@ -593,11 +602,11 @@ test('locate names the step a quote finds and the file each layer would write an
 **Work the merge frontier.** The lowest open PR matters first.   [pstack]
 
 Write the edit in:
-- user: ${w.config}/user/babysit.md (exists)
+- user: ${w.config}/01-user/babysit.md (exists)
 - org.standard: .agents/playbooks/babysit.md (exists)
-- org.overrides: ${w.config}/orgs/acme/overrides/babysit.md (exists)
+- org.overrides: ${w.config}/02-orgs/acme/02-overrides/babysit.md (exists)
 - repo.standard: .agents/playbooks/web-babysit.md (new)
-- repo.overrides: ${w.config}/repos/web/overrides/babysit.md (exists)
+- repo.overrides: ${w.config}/03-repos/web/02-overrides/babysit.md (exists)
 `,
   );
   assert.equal(r.status, 0);
@@ -618,11 +627,11 @@ test('locate checks the quote against each layer as the layers below it leave th
     origin: 'user',
     touched: ['org.overrides'],
     layers: [
-      { layer: 'user', path: join(w.config, 'user', 'babysit.md'), exists: true, problem: 'this layer wrote the step; change its text there' },
+      { layer: 'user', path: join(w.config, '01-user', 'babysit.md'), exists: true, problem: 'this layer wrote the step; change its text there' },
       { layer: 'org.standard', path: '.agents/playbooks/babysit.md', exists: true, problem: 'team files may quote pstack only' },
-      { layer: 'org.overrides', path: join(w.config, 'orgs', 'acme', 'overrides', 'babysit.md'), exists: true, problem: null },
+      { layer: 'org.overrides', path: join(w.config, '02-orgs', 'acme', '02-overrides', 'babysit.md'), exists: true, problem: null },
       { layer: 'repo.standard', path: '.agents/playbooks/web-babysit.md', exists: false, problem: 'team files may quote pstack only' },
-      { layer: 'repo.overrides', path: join(w.config, 'repos', 'web', 'overrides', 'babysit.md'), exists: true, problem: null },
+      { layer: 'repo.overrides', path: join(w.config, '03-repos', 'web', '02-overrides', 'babysit.md'), exists: true, problem: null },
     ],
   });
 });

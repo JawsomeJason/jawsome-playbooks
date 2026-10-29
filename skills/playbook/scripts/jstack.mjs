@@ -17,15 +17,19 @@ class UsageError extends Error {
   }
 }
 
+// Each folder's number is its rank among its siblings, so reading the config tree top to bottom is the cascade order.
+const DIR = { user: '01-user', orgs: '02-orgs', repos: '03-repos', standard: '01-standard', team: '01-team', overrides: '02-overrides' };
+const LEGACY_DIRS = { user: DIR.user, orgs: DIR.orgs, repos: DIR.repos };
+
 // `anywhere` is where a layer's files sit in the config dir for any org or repo, `*` standing for the org or repo.
 const LAYERS = {
-  user: { label: 'user', team: false, anywhere: 'user', dir: (c) => join(c.configDir, 'user') },
-  'org.standard': { label: 'org.std', team: true, anywhere: 'orgs/*/standard' },
-  'org.overrides': { label: 'org.ovr', team: false, anywhere: 'orgs/*/overrides', dir: (c) => c.repo.org && join(c.configDir, 'orgs', c.repo.org, 'overrides') },
-  'repo.standard': { label: 'repo.std', team: true, anywhere: 'repos/*/team' },
-  'repo.overrides': { label: 'repo.ovr', team: false, anywhere: 'repos/*/overrides', dir: (c) => c.repo.name && join(c.configDir, 'repos', c.repo.name, 'overrides') },
+  user: { label: 'user', team: false, anywhere: DIR.user, dir: (c) => join(c.configDir, DIR.user) },
+  'org.standard': { label: 'org.std', team: true, anywhere: `${DIR.orgs}/*/${DIR.standard}` },
+  'org.overrides': { label: 'org.ovr', team: false, anywhere: `${DIR.orgs}/*/${DIR.overrides}`, dir: (c) => c.repo.org && join(c.configDir, DIR.orgs, c.repo.org, DIR.overrides) },
+  'repo.standard': { label: 'repo.std', team: true, anywhere: `${DIR.repos}/*/${DIR.team}` },
+  'repo.overrides': { label: 'repo.ovr', team: false, anywhere: `${DIR.repos}/*/${DIR.overrides}`, dir: (c) => c.repo.name && join(c.configDir, DIR.repos, c.repo.name, DIR.overrides) },
 };
-const DEFAULT_ORDER = Object.keys(LAYERS);
+const ORDER = Object.keys(LAYERS);
 const label = (layer) => LAYERS[layer]?.label ?? layer;
 
 const CHANGE = /^\s*(?:[-*]|\d+\.)\s+\*\*(After|Before|Replace|In)\*\*\s+"([^"]+)"[ \t]*(.*)$/;
@@ -411,9 +415,6 @@ function readSettings(configDir) {
   const bad = (what) => new UsageError(`${path}: ${what}`);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw bad('must be a JSON object');
   if (raw.pstack !== undefined && typeof raw.pstack !== 'string') throw bad('"pstack" must be a string');
-  if (raw.layers !== undefined && !(Array.isArray(raw.layers) && raw.layers.every((l) => typeof l === 'string'))) {
-    throw bad('"layers" must be an array of layer names');
-  }
   const orgs = raw.orgs ?? {};
   if (typeof orgs !== 'object' || Array.isArray(orgs)) throw bad('"orgs" must be an object');
   for (const [org, entry] of Object.entries(orgs)) {
@@ -424,7 +425,7 @@ function readSettings(configDir) {
   for (const [repo, entry] of Object.entries(repos)) {
     if (entry?.checkout !== undefined && typeof entry.checkout !== 'string') throw bad(`repos.${repo}.checkout must be a path`);
   }
-  return { path, raw, pstack: raw.pstack ?? null, layers: raw.layers ?? DEFAULT_ORDER, orgs, repos };
+  return { path, raw, pstack: raw.pstack ?? null, orgs, repos };
 }
 
 const gitOut = (cwd, args) => {
@@ -471,7 +472,7 @@ function orgFromLinks(teamDir, configDir) {
     const path = join(teamDir, name);
     if (!lstatSync(path).isSymbolicLink()) continue;
     const rel = relative(configReal, resolve(teamReal, readlinkSync(path))).split(sep).join('/');
-    const m = /^orgs\/([^/]+)\/standard\//.exec(rel);
+    const m = new RegExp(`^${DIR.orgs}/([^/]+)/${DIR.standard}/`).exec(rel);
     if (m) return m[1];
   }
   return null;
@@ -484,7 +485,7 @@ function resolveRepo(opts, configDir, settings) {
   const owner = useCheckout ? checkout.owner : null;
   const root = useCheckout ? checkout.root : null;
   const agentsDir = root && lexists(join(root, '.agents', 'playbooks')) ? join(root, '.agents', 'playbooks') : null;
-  const teamDir = agentsDir ?? (name ? join(configDir, 'repos', name, 'team') : null);
+  const teamDir = agentsDir ?? (name ? join(configDir, DIR.repos, name, DIR.team) : null);
   const teamDisplay = agentsDir ? (file) => `.agents/playbooks/${file}` : (file) => join(teamDir, file);
   const orgs = Object.entries(settings?.orgs ?? {});
   let org = owner ? (orgs.find(([, o]) => o.owners.includes(owner))?.[0] ?? null) : null;
@@ -582,10 +583,15 @@ function loadContext(opts) {
   const configDir = configDirPath();
   const settings = readSettings(configDir);
   const configProblems = [];
-  for (const layer of settings?.layers ?? []) {
-    if (!LAYERS[layer]) configProblems.push({ path: settings.path, line: 1, message: `unknown layer ${layer}` });
+  if (settings?.raw.layers !== undefined) {
+    configProblems.push({ path: settings.path, line: 1, message: '"layers" is retired: the numbered folders set the cascade order, so delete the key' });
   }
-  const order = isDir(configDir) ? (settings?.layers ?? DEFAULT_ORDER).filter((l) => LAYERS[l]) : [];
+  for (const [old, now] of Object.entries(LEGACY_DIRS)) {
+    if (isDir(join(configDir, old))) {
+      configProblems.push({ path: join(configDir, old), line: 1, message: `rename ${old}/ to ${now}/ (inside it: standard/ to ${DIR.standard}/, team/ to ${DIR.team}/, overrides/ to ${DIR.overrides}/)` });
+    }
+  }
+  const order = isDir(configDir) ? ORDER : [];
   const pstack = resolvePstack(opts.pstack);
   const repo = resolveRepo(opts, configDir, settings);
   return { configDir, settings, order, configProblems, pstack, repo, pinned: Boolean(opts.pstack) };
@@ -851,7 +857,7 @@ function editTarget(ctx, files, layer, name) {
     const file = lexists(join(repo.teamDir, `${name}.md`)) ? `${repo.name}-${name}.md` : `${name}.md`;
     return { path: repo.teamDisplay(file), exists: false };
   }
-  const dir = layer === 'org.standard' ? repo.org && join(ctx.configDir, 'orgs', repo.org, 'standard') : LAYERS[layer].dir(ctx);
+  const dir = layer === 'org.standard' ? repo.org && join(ctx.configDir, DIR.orgs, repo.org, DIR.standard) : LAYERS[layer].dir(ctx);
   return { path: dir ? join(dir, `${name}.md`) : null, exists: false };
 }
 
@@ -1113,7 +1119,7 @@ function checkRepo(h, configDir, settings, name, here) {
   const checkout = isDir(path) ? findCheckout(path) : null;
   if (!checkout) return { finding: finding(id, 'fail', `${name}: ${path} is not a git checkout`, { fixes: h.fixes(5, { run: false }) }) };
   const { root } = checkout;
-  const team = join(configDir, 'repos', name, 'team');
+  const team = join(configDir, DIR.repos, name, DIR.team);
   const link = join(root, '.agents', 'playbooks');
   const exclude = join(gitOut(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'info', 'exclude');
   const problems = [];
@@ -1158,7 +1164,7 @@ function diagnose() {
   const config = checkConfig(h, configDir);
   findings.push(config.finding);
   if (config.handle) findings.push(checkMode(h, configDir, config.handle));
-  const repos = config.settings ? listDir(join(configDir, 'repos')).filter((name) => isDir(join(configDir, 'repos', name))) : [];
+  const repos = config.settings ? listDir(join(configDir, DIR.repos)).filter((name) => isDir(join(configDir, DIR.repos, name))) : [];
   const here = findCheckout(cwd);
   const runs = [];
   for (const name of repos) {

@@ -55,7 +55,7 @@ const HEALTHY = (w) => `✓ pstack-claude 1.0.0: ${PSTACK}
 - jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
 ✓ config ${w.config}: layers.json parses, handle tester
 ✓ mode skill ${w.config}/mode/tester-mode is linked into ${w.home}/.claude/skills
-✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/repos/web/team, and ${w.repo}/.git/info/exclude hides it
+✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/03-repos/web/01-team, and ${w.repo}/.git/info/exclude hides it
 ✓ jstack-cli check --repo web passed
 doctor passed
 `;
@@ -99,7 +99,7 @@ test('each failing check prints the exact commands that fix it, and doctor exits
 ✗ mode skill ${w.config}/mode/tester-mode is not linked into any skills folder
     ln -s ${w.config}/mode/tester-mode ${w.home}/.claude/skills/tester-mode
 ✗ web: ${w.repo}/.agents/playbooks is missing; ${w.repo}/.git/info/exclude does not hide /.agents/playbooks
-    ln -s ${w.config}/repos/web/team ${w.repo}/.agents/playbooks
+    ln -s ${w.config}/03-repos/web/01-team ${w.repo}/.agents/playbooks
     echo /.agents/playbooks >> ${w.repo}/.git/info/exclude
 ✓ jstack-cli check --repo web passed
 doctor failed: 4 problems
@@ -179,16 +179,16 @@ test('a repo with no known checkout is info, and the current checkout counts as 
   assert.ok(outside.stdout.includes('- web: no checkout known; set repos.web.checkout in layers.json, or run doctor from the checkout\n'), outside.stdout);
   assert.equal(outside.status, 0);
   const inside = w.doctor([], { cwd: w.repo });
-  assert.ok(inside.stdout.includes(`✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/repos/web/team`), inside.stdout);
+  assert.ok(inside.stdout.includes(`✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/03-repos/web/01-team`), inside.stdout);
 });
 
 test('a failing jstack-cli check shows its lines', () => {
-  const w = doctorWorld({ files: { 'user/broken.md': '---\nextends: babysit\n---\n\n- **In** "no such words" more.\n' } });
+  const w = doctorWorld({ files: { '01-user/broken.md': '---\nextends: babysit\n---\n\n- **In** "no such words" more.\n' } });
   const r = w.doctor();
   assert.ok(
     r.stdout.includes(`✗ jstack-cli check --repo web failed
-    ${w.config}/user/broken.md:1: missing when:
-    ${w.config}/user/broken.md:5: quote not found: "no such words"
+    ${w.config}/01-user/broken.md:1: missing when:
+    ${w.config}/01-user/broken.md:5: quote not found: "no such words"
 `),
     r.stdout,
   );
@@ -223,7 +223,7 @@ test('doctor --fix asks per fix on the terminal and runs only the ones answered 
   );
   assert.equal(existsSync(join(w.home, '.local', 'bin', 'jstack-cli')), false);
   assert.equal(readlinkSync(join(w.home, '.claude', 'skills', 'tester-mode')), join(w.config, 'mode', 'tester-mode'));
-  assert.equal(readlinkSync(join(w.repo, '.agents', 'playbooks')), join(w.config, 'repos', 'web', 'team'));
+  assert.equal(readlinkSync(join(w.repo, '.agents', 'playbooks')), join(w.config, '03-repos', 'web', '01-team'));
   assert.equal(readFileSync(join(w.repo, '.git', 'info', 'exclude'), 'utf8'), '/.agents/playbooks\n');
   assert.equal(r.status, 1, 'the stub claude installs nothing, so the plugin check still fails after the fixes');
 });
