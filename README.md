@@ -4,7 +4,7 @@ jstack layers your personal and team playbooks over pstack's bundled poteto-mode
 
 jstack keeps pstack's playbook format and edit grammar, adds no verbs, and never pins a pstack version. After a pstack upgrade, `jstack-cli check` names each quote that no longer matches its step.
 
-jstack ships two skills. The `playbook` skill runs `jstack-cli` for an agent. The `setup` skill writes your `<handle>-mode` skill, scaffolds the config dir, and links team folders into your repos. You can rerun `setup` at any time.
+jstack ships three skills. The `playbook` skill runs `jstack-cli` for an agent. The `learn` skill turns a session's corrections into proposed layer edits and writes the ones you pick. The `setup` skill writes your `<handle>-mode` skill, scaffolds the config dir, and links team folders into your repos. You can rerun `setup` at any time.
 
 - The [jstack-cli reference](skills/playbook/references/cli.md) lists the commands, flags, exit codes, and environment variables.
 - [Layers, files, and the cascade](skills/playbook/references/layers.md) describes the config dir, the layer file format, and how layers apply.
@@ -44,7 +44,7 @@ If the harness asks for a scope, pick user scope, so jstack works in every repo.
 | Pi | `pi install git:github.com/JawsomeJason/jstack` | Yes, from a local checkout |
 | GitHub Copilot | `copilot plugin marketplace add JawsomeJason/jstack`, then `copilot plugin install jstack@jstack` | Untested |
 | Muse | `git clone https://github.com/JawsomeJason/jstack`, then `muse plugins install ./jstack`. jstack has no hooks or agent definitions, so it needs no `muse plugins approve`. | Yes, from a local checkout |
-| OpenCode | `git clone https://github.com/JawsomeJason/jstack`, then link `jstack/skills/playbook` and `jstack/skills/setup` into `$HOME/.agents/skills/` | Untested |
+| OpenCode | `git clone https://github.com/JawsomeJason/jstack`, then link `jstack/skills/playbook`, `jstack/skills/learn`, and `jstack/skills/setup` into `$HOME/.agents/skills/` | Untested |
 | Gemini CLI | The same as OpenCode | Untested |
 | Prime Agent | The same as OpenCode | Untested |
 

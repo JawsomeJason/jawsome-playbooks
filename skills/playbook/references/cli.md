@@ -3,6 +3,7 @@
 ```sh
 jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
 jstack-cli playbook compute <playbook> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+jstack-cli playbook locate <playbook> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
 jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
 jstack-cli doctor [--fix | --json]
 jstack-cli --help
@@ -26,7 +27,7 @@ jstack-cli is `scripts/jstack.mjs` in this skill. It needs Node and nothing else
 | Code | Meaning |
 | --- | --- |
 | 0 | Clean. |
-| 1 | A validator problem, pstack's own checker failed, or a `doctor` check failed. `compute` still prints the cascade, except when the `check` it runs after a pstack change fails. Then it prints the `check` result. |
+| 1 | A validator problem, a `locate` quote that names no step or more than one, pstack's own checker failed, or a `doctor` check failed. `compute` still prints the cascade, except when the `check` it runs after a pstack change fails. Then it prints the `check` result. |
 | 2 | Bad usage, such as `--repo` or `--pstack` with `doctor`, or `--fix` with `--json` or with another command. No pstack found, an unknown `--pstack` version, a `layers.json` that is not valid JSON or has the wrong shape, or an unknown playbook. The message goes to stderr. |
 
 ## Environment
@@ -69,6 +70,27 @@ These sections follow the steps, each only when it has entries, in this order:
 `pstack check-playbooks:` comes last, with pstack's own checker result, or `ok`. `--json` prints the same data, shaped by [schemas/jstack.compute.schema.json](schemas/jstack.compute.schema.json).
 
 When the installed pstack differs from the `pstack` in `layers.json`, `compute` runs `check` first. A pass records the new version. A failure stops with exit 1, because an upgrade that moved the quoted text would otherwise apply edits in the wrong place.
+
+## locate
+
+`locate` finds the one step of the computed playbook that a quote names, and lists the file each active layer would hold an edit to it in. The `learn` skill uses it to place a lesson, so the agent does not merge layers by hand to find where a quote anchors.
+
+```
+# babysit step 3 (web · acme-eng · pstack 1.2.3)
+
+**Work the merge frontier.** The lowest open PR matters first.   [pstack]
+
+Write the edit in:
+- user: /home/sam/.jstack/user/babysit.md (exists)
+- org.standard: .agents/playbooks/babysit.md (exists)
+- org.overrides: /home/sam/.jstack/orgs/acme/overrides/babysit.md (new)
+- repo.standard: .agents/playbooks/web-babysit.md (new; team files may quote pstack only)
+- repo.overrides: /home/sam/.jstack/repos/web/overrides/babysit.md (exists)
+```
+
+Each layer line gives the path, `exists` or `new`, and the reason an edit there cannot anchor on the quote, if one applies. jstack-cli judges the quote against the step as the layers below that layer leave it, because that is the text the edit matches when the cascade runs. A layer's existing file is the one that already edits the playbook. A new team file in `.agents/playbooks` takes `<repo>-<playbook>.md` when `<playbook>.md` is taken. The layer that wrote the step gets `this layer wrote the step; change its text there`, because an edit line cannot anchor on text its own layer adds.
+
+A quote that names no step or more than one prints the same message `check` prints and exits 1. `--json` follows [schemas/jstack.locate.schema.json](schemas/jstack.locate.schema.json).
 
 ## list
 
