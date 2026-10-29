@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "jstack-cli playbook locate --json",
+  "description": "The step a quote names in the computed playbook, and the file each active layer would hold an edit to it in.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["playbook", "repo", "owner", "org", "pstack", "step", "text", "origin", "touched", "layers"],
+  "$defs": {
+    "layer": { "type": "string", "enum": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"] }
+  },
+  "properties": {
+    "playbook": { "type": "string" },
+    "repo": { "type": ["string", "null"] },
+    "owner": { "type": ["string", "null"] },
+    "org": { "type": ["string", "null"] },
+    "pstack": { "type": ["string", "null"] },
+    "step": { "type": "integer", "minimum": 1, "description": "The step's number in the computed playbook." },
+    "text": { "type": "string", "description": "The step's text after every layer." },
+    "origin": { "oneOf": [{ "const": "pstack" }, { "$ref": "#/$defs/layer" }] },
+    "touched": { "type": "array", "items": { "$ref": "#/$defs/layer" } },
+    "layers": {
+      "type": "array",
+      "description": "One entry per active layer, in cascade order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["layer", "path", "exists", "problem"],
+        "properties": {
+          "layer": { "$ref": "#/$defs/layer" },
+          "path": { "type": ["string", "null"], "description": "The layer's file that already edits the playbook, or the path a new one takes. Team files read through a checkout are relative to its root. null when the checkout has no org or repo for this layer." },
+          "exists": { "type": "boolean" },
+          "problem": { "type": ["string", "null"], "description": "Why an edit in this layer cannot anchor on the quote, judged against the layers below it. null when it can." }
+        }
+      }
+    }
+  }
+}

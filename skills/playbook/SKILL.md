@@ -1,7 +1,7 @@
 ---
 name: playbook
-description: Lists, computes, and checks layered poteto-mode playbooks with jstack-cli. compute prints one playbook with the personal, org, and repo layers applied over pstack's bundled steps in cascade order, tags each step with the layer that wrote it, and names every override. check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `jstack-cli playbook compute`, when writing or editing a layer file, or after a pstack upgrade.
-argument-hint: "<list|compute|check|doctor> [playbook] [--repo <repo>]"
+description: Lists, computes, and checks layered poteto-mode playbooks with jstack-cli. compute prints one playbook with the personal, org, and repo layers applied over pstack's bundled steps in cascade order, tags each step with the layer that wrote it, and names every override. locate names the step a quote finds and the file each layer would hold an edit in. check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `jstack-cli playbook compute`, when writing or editing a layer file, or after a pstack upgrade.
+argument-hint: "<list|compute|locate|check|doctor> [playbook] [--repo <repo>]"
 compatibility: Requires Node and the pstack plugin's poteto-mode skill.
 license: MIT
 ---
@@ -19,6 +19,7 @@ jstack layers the operator's personal and team playbooks over pstack's bundled p
    | --- | --- |
    | `list` | `jstack-cli playbook list` |
    | `compute <playbook>` | `jstack-cli playbook compute <playbook>` |
+   | `locate <playbook> <quote>` | `jstack-cli playbook locate <playbook> "<quote>"` |
    | `check` | `jstack-cli check` |
    | `doctor` | `jstack-cli doctor` |
 
@@ -43,4 +44,4 @@ Exit code 1 means a validator problem. Report each problem line to the operator.
 
 ## Keep the JSON shape
 
-`--json` output follows [jstack.compute](references/schemas/jstack.compute.schema.json), [jstack.list](references/schemas/jstack.list.schema.json), [jstack.check](references/schemas/jstack.check.schema.json), and [jstack.doctor](references/schemas/jstack.doctor.schema.json). When jstack-cli cannot run, produce the same shape by hand from [references/layers.md](references/layers.md), so a mode skill that reads it keeps working.
+`--json` output follows [jstack.compute](references/schemas/jstack.compute.schema.json), [jstack.list](references/schemas/jstack.list.schema.json), [jstack.locate](references/schemas/jstack.locate.schema.json), [jstack.check](references/schemas/jstack.check.schema.json), and [jstack.doctor](references/schemas/jstack.doctor.schema.json). When jstack-cli cannot run, produce the same shape by hand from [references/layers.md](references/layers.md), so a mode skill that reads it keeps working.
