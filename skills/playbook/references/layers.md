@@ -27,13 +27,15 @@ Each org standard file exists once, and each repo's `team/` folder links to it, 
   "modeTrigger": "manual",
   "pstack": "1.2.3",
   "layers": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"],
-  "orgs": { "acme": { "owners": ["acme-eng"] } }
+  "orgs": { "acme": { "owners": ["acme-eng"] } },
+  "repos": { "web": { "checkout": "/home/sam/code/web" } }
 }
 ```
 
 - `layers` is the cascade order, lowest first. A later layer wins, as in CSS cascade layers, so the operator's `org.overrides` and `repo.overrides` files sit above the team files they change. Without `layers`, jstack-cli uses the order above.
 - `orgs` maps an org name to the forge owners whose repos belong to it. A repo whose owner is in no list gets no org layers.
 - `pstack` is the version that the layers last passed `check` against. jstack-cli records it and never pins it.
+- `repos` maps a repo key to its main checkout. The `setup` skill records it when it links the repo, and `jstack-cli doctor` reads it to check the repo's link from any directory. The cascade does not read it.
 - `handle` and `modeTrigger` are the `setup` skill's answers. They stay in the file so that a rerun of `setup` offers them as defaults.
 
 ## Playbook file format

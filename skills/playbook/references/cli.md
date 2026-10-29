@@ -4,6 +4,7 @@
 jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
 jstack-cli playbook compute <playbook> [--repo <repo>] [--json] [--pstack <dir-or-version>]
 jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
+jstack-cli doctor [--fix | --json]
 jstack-cli --help
 ```
 
@@ -17,6 +18,7 @@ jstack-cli is `scripts/jstack.mjs` in this skill. It needs Node and nothing else
 | --- | --- |
 | `--repo <repo>` | Sets the repo key. When it differs from the current checkout's key, jstack-cli ignores the checkout and reads team files from `<config>/repos/<repo>/team/`. |
 | `--json` | Prints JSON that follows the command's schema in [schemas/](schemas/). |
+| `--fix` | `doctor` only. Asks before each fix, then runs it. See [doctor](#doctor). |
 | `--pstack <dir-or-version>` | Uses that pstack instead of the one jstack-cli finds. It takes a folder, or a version next to the one in use or in any plugin cache. With this flag, jstack-cli never writes `layers.json`, so you can preview an upgrade. |
 
 ## Exit codes
@@ -24,8 +26,8 @@ jstack-cli is `scripts/jstack.mjs` in this skill. It needs Node and nothing else
 | Code | Meaning |
 | --- | --- |
 | 0 | Clean. |
-| 1 | A validator problem, or pstack's own checker failed. `compute` still prints the cascade, except when the `check` it runs after a pstack change fails. Then it prints the `check` result. |
-| 2 | Bad usage, no pstack found, an unknown `--pstack` version, a `layers.json` that is not valid JSON or has the wrong shape, or an unknown playbook. The message goes to stderr. |
+| 1 | A validator problem, pstack's own checker failed, or a `doctor` check failed. `compute` still prints the cascade, except when the `check` it runs after a pstack change fails. Then it prints the `check` result. |
+| 2 | Bad usage, such as `--repo` or `--pstack` with `doctor`, or `--fix` with `--json` or with another command. No pstack found, an unknown `--pstack` version, a `layers.json` that is not valid JSON or has the wrong shape, or an unknown playbook. The message goes to stderr. |
 
 ## Environment
 
@@ -96,3 +98,32 @@ A handoff is a `playbooks/<stem>.md` path, or a playbook named right after `run`
 A handoff to a playbook that this repo's layers lack, but that some layer folder in the config dir holds for another org or repo, prints `info: <path>:<line>: hands off to <x>, which only <folder> defines` and does not fail the check. A user-layer file applies in every repo, so it can hand off to a playbook that only one org defines, and that handoff is right in that org's repos.
 
 `check` also prints `proposed: <path>:<line>` for each team file whose `source` is `proposed`, then `check passed: pstack <ver>` or `check failed: ...`. `--json` follows [schemas/jstack.check.schema.json](schemas/jstack.check.schema.json). Without `--pstack`, a pass records the checked version in `layers.json` when that file exists.
+
+## doctor
+
+`doctor` checks the whole install and prints one line per check: `✓` for a pass, `✗` for a failure, and `-` for information. Under each `✗` it prints the commands that fix it. The checks run in this order:
+
+| Check | Passes when |
+| --- | --- |
+| pstack-claude | jstack-cli finds a pstack, by the search order under [Environment](#environment). The line names the version and folder. |
+| jstack plugin | `claude plugin list --json` lists a `jstack@` plugin. Without `claude` on `PATH`, an `installed_plugins.json` in a dot-folder of the home directory lists one. |
+| jstack-cli | `jstack-cli` on `PATH` resolves to a jstack `bin/jstack-cli`. A `jstack` on `PATH` that is not jstack's, such as Java's, prints a `-` line. |
+| config | The config dir exists, and `layers.json` parses and has a `handle`. |
+| mode skill | `<config>/mode/<handle>-mode/SKILL.md` exists, and a `skills` folder in a dot-folder of the home directory links to it. |
+| each repo | For each folder in `<config>/repos/`, the checkout's `.agents/playbooks` resolves to `<config>/repos/<repo>/team/`, and the checkout's `info/exclude` has `/.agents/playbooks`. |
+| check | `jstack-cli check --repo <repo>` passes for each repo, or `jstack-cli check` passes when the config has no repos. |
+
+doctor finds a repo's checkout at `repos.<repo>.checkout` in `layers.json`, which the `setup` skill records. Without that key, it uses the current directory's checkout when its key matches. A repo with neither gets a `-` line, and doctor skips its link check.
+
+doctor writes nothing without `--fix`. It runs `check` with `--pstack` set to the pstack it found, so `check` does not record a version in `layers.json`.
+
+The fixes depend on the harness:
+
+- With `claude` on `PATH`, a missing plugin gets Claude Code's install commands from the README's tables. doctor leaves out `claude plugin marketplace add` when `claude plugin marketplace list --json` already lists that marketplace.
+- Without `claude`, doctor prints the row of every harness from the README's table for that install step. jstack cannot run another harness's installer.
+- A missing link gets an `ln -s` command, and a missing exclude line gets an `echo ... >>` command.
+- A fix that would replace a file prints as advice, such as `move <path> aside, then: ln -s ...`, because the file in the way may be the operator's own work.
+
+`--fix` prints the report, then asks `run these? [y/N]` for each failing check that has a command to run, and runs that check's commands on `y`. It runs only `claude plugin` commands, `mkdir -p`, `ln -s` to a path that does not exist, and an append to `info/exclude`. A fix never copies files into a plugin cache, because a harness loads only the version its install record names. When stdin is not a terminal, `--fix` prints `fixes not run: no terminal to ask on` and runs nothing. After the fixes, doctor runs every check again and prints the new report under `after fixes:`.
+
+`--json` prints the findings, shaped by [schemas/jstack.doctor.schema.json](schemas/jstack.doctor.schema.json).
