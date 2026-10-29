@@ -42,6 +42,8 @@ jstack-cli picks the pstack folder in this order, and uses the first one that ho
 
 Both searches use the layout that plugin harnesses share, so they find pstack without naming any one harness. A pstack in any other place needs `JSTACK_PSTACK_DIR`.
 
+jstack-cli reads the version from the first of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `.muse-plugin/plugin.json`, and `package.json` in the pstack folder that has a semver `version`. Without one, it uses the folder name when that is a semver, as plugin caches name their folders. When neither gives a version, output names pstack by its path and `--json` gives `null`. jstack-cli then records nothing in `layers.json`, because that field holds a version.
+
 ## compute
 
 `compute` prints the playbook with every layer applied, as Markdown:

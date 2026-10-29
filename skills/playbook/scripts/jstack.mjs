@@ -243,7 +243,7 @@ function cascade(bundled, files, order) {
     for (const file of files.filter((f) => f.layer === layer)) {
       const valid = (stem) => (file.team ? bundled.has(stem) : known.has(stem));
       for (const stem of file.extends) {
-        if (!valid(stem)) file.problems.push({ line: file.extendsLine, message: `extends ${stem}, which pstack ${file.pstackVersion} has no playbook for` });
+        if (!valid(stem)) file.problems.push({ line: file.extendsLine, message: `extends ${stem}, which pstack ${file.pstackName} has no playbook for` });
       }
       file.targets = [...new Set([...file.extends.filter(valid), ...(known.has(file.stem) ? [file.stem] : [])])];
       if (file.targets.length === 0 && file.extends.length === 0) {
@@ -491,7 +491,27 @@ const bySemverDesc = (a, b) => {
   return 0;
 };
 
-const pstackAt = (dir) => ({ dir: resolve(dir), version: basename(resolve(dir)) });
+const SEMVER = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const MANIFESTS = ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json', '.muse-plugin/plugin.json', 'package.json'];
+
+const readJson = (path) => {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * A pstack's version comes from a manifest at the plugin root, else from a folder named like a version, as plugin
+ * caches name them. With neither, `version` is null, so nothing records it, and `name` falls back to the path.
+ */
+function pstackAt(path) {
+  const dir = resolve(path);
+  const declared = MANIFESTS.map((m) => readJson(join(dir, m))?.version).find((v) => typeof v === 'string' && SEMVER.test(v));
+  const version = declared ?? (SEMVER.test(basename(dir)) ? basename(dir) : null);
+  return { dir, version, name: version ?? dir };
+}
 
 const pluginDirs = () => {
   const home = homedir();
@@ -505,12 +525,7 @@ const pluginDirs = () => {
 function installedPstack() {
   const found = [];
   for (const plugins of pluginDirs()) {
-    let record;
-    try {
-      record = JSON.parse(readFileSync(join(plugins, 'installed_plugins.json'), 'utf8'));
-    } catch {
-      continue;
-    }
+    const record = readJson(join(plugins, 'installed_plugins.json'));
     for (const [key, installs] of Object.entries(record?.plugins ?? {})) {
       if (!key.startsWith('pstack@') || !Array.isArray(installs)) continue;
       for (const { installPath, projectPath } of installs) {
@@ -529,7 +544,7 @@ function discoverPstacks() {
     for (const market of listDir(cache)) {
       const base = join(cache, market, 'pstack');
       for (const version of listDir(base).filter((v) => /^\d+\.\d+/.test(v))) {
-        if (isDir(join(base, version, PLAYBOOKS))) found.push({ dir: join(base, version), version });
+        if (isDir(join(base, version, PLAYBOOKS))) found.push({ dir: join(base, version), version, name: version });
       }
     }
   }
@@ -565,7 +580,7 @@ function loadContext(opts) {
   return { configDir, settings, order, configProblems, pstack, repo, pinned: Boolean(opts.pstack) };
 }
 
-function readLayerFile(path, displayPath, layer, team, pstackVersion) {
+function readLayerFile(path, displayPath, layer, team, pstackName) {
   const parsed = parseLayerText(readFileSync(path, 'utf8'));
   const { front } = parsed;
   const problems = parsed.malformed.map((line) => ({ line, message: 'a change has no straight-quoted step text to anchor on' }));
@@ -585,7 +600,7 @@ function readLayerFile(path, displayPath, layer, team, pstackVersion) {
     prose: parsed.prose,
     body: parsed.body,
     problems,
-    pstackVersion,
+    pstackName,
   };
 }
 
@@ -594,7 +609,7 @@ function collectFiles(ctx) {
   const active = [];
   const inactive = [];
   const team = mdFiles(ctx.repo.teamDir).map((name) => {
-    const file = readLayerFile(join(ctx.repo.teamDir, name), ctx.repo.teamDisplay(name), null, true, ctx.pstack.version);
+    const file = readLayerFile(join(ctx.repo.teamDir, name), ctx.repo.teamDisplay(name), null, true, ctx.pstack.name);
     const layer = file.front.layer?.value;
     if (!LAYERS[layer]?.team || !file.source?.value) file.problems.push({ line: 1, message: 'team file needs layer: and source:' });
     if (LAYERS[layer]?.team) {
@@ -609,7 +624,7 @@ function collectFiles(ctx) {
       continue;
     }
     const dir = LAYERS[layer].dir(ctx);
-    for (const name of mdFiles(dir)) active.push(readLayerFile(join(dir, name), join(dir, name), layer, false, ctx.pstack.version));
+    for (const name of mdFiles(dir)) active.push(readLayerFile(join(dir, name), join(dir, name), layer, false, ctx.pstack.name));
   }
   inactive.push(...team.filter((f) => !ctx.order.includes(f.layer)));
   return { active, inactive, team };
@@ -662,7 +677,7 @@ function runPstackCheck(ctx, teamBroken) {
   if (!ctx.repo.agentsDir) return skipped('no .agents/playbooks');
   if (teamBroken) return skipped('broken link in .agents/playbooks');
   const script = join(ctx.pstack.dir, 'skills', 'poteto-mode', 'scripts', 'check-playbooks.mjs');
-  if (!isFile(script)) return skipped(`pstack ${ctx.pstack.version} has no check-playbooks.mjs`);
+  if (!isFile(script)) return skipped(`pstack ${ctx.pstack.name} has no check-playbooks.mjs`);
   const r = spawnSync(process.execPath, [script, ctx.repo.root], { cwd: ctx.repo.root, encoding: 'utf8' });
   const lines = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.split('\n').filter((l) => l.trim());
   return { status: r.status === 0 ? 'ok' : 'failed', lines };
@@ -688,7 +703,7 @@ function analyze(ctx, { pstackCheck }) {
 
 const fileProblems = (files) => files.flatMap((f) => [...f.problems].sort((a, b) => a.line - b.line).map((p) => ({ path: f.display, ...p })));
 
-const needsRecord = (ctx) => !ctx.pinned && ctx.settings && ctx.settings.pstack !== ctx.pstack.version;
+const needsRecord = (ctx) => !ctx.pinned && ctx.settings && ctx.pstack.version && ctx.settings.pstack !== ctx.pstack.version;
 // Swaps only the version text, so the user's own formatting of layers.json survives.
 function record(ctx) {
   const text = readFileSync(ctx.settings.path, 'utf8');
@@ -706,15 +721,15 @@ function checkReport(ctx, analysis) {
 
 const problemLine = (p) => `${p.path}:${p.line}: ${p.message}`;
 
-function renderCheck(report) {
+function renderCheck(report, pstack) {
   const n = report.problems.length;
   return [
     ...(report.pstackCheck.status === 'skipped' ? [] : report.pstackCheck.lines),
     ...report.problems.map(problemLine),
     ...report.proposed.map((p) => `proposed: ${p.path}:${p.line}`),
     report.passed
-      ? `check passed: pstack ${report.pstack}`
-      : `check failed: ${n ? `${n} ${n === 1 ? 'problem' : 'problems'}` : "pstack's checker failed"} against pstack ${report.pstack}`,
+      ? `check passed: pstack ${pstack}`
+      : `check failed: ${n ? `${n} ${n === 1 ? 'problem' : 'problems'}` : "pstack's checker failed"} against pstack ${pstack}`,
   ].join('\n');
 }
 
@@ -727,10 +742,10 @@ function runCheck(ctx, opts) {
   const report = checkReport(ctx, analyze(ctx, { pstackCheck: true }));
   const recorded = report.passed && needsRecord(ctx);
   if (recorded) record(ctx);
-  return { out: opts.json ? checkJson(report, recorded) : renderCheck(report), status: report.passed ? 0 : 1 };
+  return { out: opts.json ? checkJson(report, recorded) : renderCheck(report, ctx.pstack.name), status: report.passed ? 0 : 1 };
 }
 
-const headerParts = (ctx) => [ctx.repo.name, ctx.repo.owner ?? ctx.repo.org, `pstack ${ctx.pstack.version}`].filter(Boolean);
+const headerParts = (ctx) => [ctx.repo.name, ctx.repo.owner ?? ctx.repo.org, `pstack ${ctx.pstack.name}`].filter(Boolean);
 
 function renderCompute(r) {
   const sections = [`# ${r.playbook} (${r.header.join(' · ')})`];
@@ -763,7 +778,7 @@ function runCompute(ctx, opts, name) {
   if (!pb) throw new UsageError(`no playbook named ${name}`);
   if (needsRecord(ctx)) {
     const report = checkReport(ctx, analysis);
-    if (!report.passed) return { out: opts.json ? checkJson(report, false) : renderCheck(report), status: 1 };
+    if (!report.passed) return { out: opts.json ? checkJson(report, false) : renderCheck(report, ctx.pstack.name), status: 1 };
     record(ctx);
   }
   const touching = analysis.files.active.filter((f) => touches(f, name));

@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["pstack", "problems", "proposed", "pstackCheck", "recorded"],
   "properties": {
-    "pstack": { "type": "string", "description": "pstack version checked against." },
+    "pstack": { "type": ["string", "null"], "description": "pstack version checked against, from the plugin manifest or a folder named like a version. null when neither gives one." },
     "problems": {
       "type": "array",
       "items": {
