@@ -93,4 +93,6 @@ When the installed pstack differs from the `pstack` in `layers.json`, `compute` 
 
 A handoff is a `playbooks/<stem>.md` path, or a playbook named right after `run`, `per`, `route ... to`, or `hand ... to`, as a bold title, a capitalized title, or a kebab-case stem. A title resolves to a stem the way poteto-mode resolves it: kebab case, hyphens kept, other punctuation dropped. A bold name that is a poteto-mode section or skill, such as **Comments**, is not a handoff. `check` reads only text that a layer file wrote, never the pstack words an edit quotes, because pstack owns its own text.
 
+A handoff to a playbook that this repo's layers lack, but that some layer folder in the config dir holds for another org or repo, prints `info: <path>:<line>: hands off to <x>, which only <folder> defines` and does not fail the check. A user-layer file applies in every repo, so it can hand off to a playbook that only one org defines, and that handoff is right in that org's repos.
+
 `check` also prints `proposed: <path>:<line>` for each team file whose `source` is `proposed`, then `check passed: pstack <ver>` or `check failed: ...`. `--json` follows [schemas/jstack.check.schema.json](schemas/jstack.check.schema.json). Without `--pstack`, a pass records the checked version in `layers.json` when that file exists.

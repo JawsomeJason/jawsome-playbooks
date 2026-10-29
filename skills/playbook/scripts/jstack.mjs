@@ -14,12 +14,13 @@ class UsageError extends Error {
   }
 }
 
+// `anywhere` is where a layer's files sit in the config dir for any org or repo, `*` standing for the org or repo.
 const LAYERS = {
-  user: { label: 'user', team: false, dir: (c) => join(c.configDir, 'user') },
-  'org.standard': { label: 'org.std', team: true },
-  'org.overrides': { label: 'org.ovr', team: false, dir: (c) => c.repo.org && join(c.configDir, 'orgs', c.repo.org, 'overrides') },
-  'repo.standard': { label: 'repo.std', team: true },
-  'repo.overrides': { label: 'repo.ovr', team: false, dir: (c) => c.repo.name && join(c.configDir, 'repos', c.repo.name, 'overrides') },
+  user: { label: 'user', team: false, anywhere: 'user', dir: (c) => join(c.configDir, 'user') },
+  'org.standard': { label: 'org.std', team: true, anywhere: 'orgs/*/standard' },
+  'org.overrides': { label: 'org.ovr', team: false, anywhere: 'orgs/*/overrides', dir: (c) => c.repo.org && join(c.configDir, 'orgs', c.repo.org, 'overrides') },
+  'repo.standard': { label: 'repo.std', team: true, anywhere: 'repos/*/team' },
+  'repo.overrides': { label: 'repo.ovr', team: false, anywhere: 'repos/*/overrides', dir: (c) => c.repo.name && join(c.configDir, 'repos', c.repo.name, 'overrides') },
 };
 const DEFAULT_ORDER = Object.keys(LAYERS);
 const label = (layer) => LAYERS[layer]?.label ?? layer;
@@ -600,6 +601,7 @@ function readLayerFile(path, displayPath, layer, team, pstackName) {
     prose: parsed.prose,
     body: parsed.body,
     problems,
+    info: [],
     pstackName,
   };
 }
@@ -683,6 +685,19 @@ function runPstackCheck(ctx, teamBroken) {
   return { status: r.status === 0 ? 'ok' : 'failed', lines };
 }
 
+/** Each playbook stem that some layer folder in the config holds for any org or repo, with the first such folder. */
+function configStems(ctx) {
+  const stems = new Map();
+  for (const layer of ctx.order) {
+    const [top, star, leaf] = LAYERS[layer].anywhere.split('/');
+    const dirs = star ? listDir(join(ctx.configDir, top)).map((name) => join(top, name, leaf)) : [top];
+    for (const dir of dirs) {
+      for (const stem of mdFiles(join(ctx.configDir, dir)).map((name) => basename(name, '.md'))) if (!stems.has(stem)) stems.set(stem, dir);
+    }
+  }
+  return stems;
+}
+
 function analyze(ctx, { pstackCheck }) {
   const bundledDir = join(ctx.pstack.dir, PLAYBOOKS);
   const bundled = new Map(mdFiles(bundledDir).map((f) => [basename(f, '.md'), parsePlaybook(readFileSync(join(bundledDir, f), 'utf8'))]));
@@ -690,10 +705,14 @@ function analyze(ctx, { pstackCheck }) {
   const playbooks = cascade(bundled, files.active, ctx.order);
   const layerFiles = [...files.active, ...files.inactive];
   const index = playbookIndex(ctx.pstack.dir, playbooks, layerFiles);
+  const elsewhere = configStems(ctx);
   for (const file of layerFiles) {
     for (const { text, line } of file.prose) {
       for (const ref of handoffRefs(text, index)) {
-        if (!ref.stem) file.problems.push({ line, message: `hands off to ${ref.name}, which no layer or pstack defines` });
+        if (ref.stem) continue;
+        const where = elsewhere.get(kebab(ref.name));
+        if (where) file.info.push({ line, message: `hands off to ${ref.name}, which only ${where} defines` });
+        else file.problems.push({ line, message: `hands off to ${ref.name}, which no layer or pstack defines` });
       }
     }
   }
@@ -701,7 +720,7 @@ function analyze(ctx, { pstackCheck }) {
   return { files, playbooks, index, links, pstackCheck: pstackCheck ? runPstackCheck(ctx, links.teamBroken) : null };
 }
 
-const fileProblems = (files) => files.flatMap((f) => [...f.problems].sort((a, b) => a.line - b.line).map((p) => ({ path: f.display, ...p })));
+const fileProblems = (files, key = 'problems') => files.flatMap((f) => [...f[key]].sort((a, b) => a.line - b.line).map((p) => ({ path: f.display, ...p })));
 
 const needsRecord = (ctx) => !ctx.pinned && ctx.settings && ctx.pstack.version && ctx.settings.pstack !== ctx.pstack.version;
 // Swaps only the version text, so the user's own formatting of layers.json survives.
@@ -713,10 +732,12 @@ function record(ctx) {
 }
 
 function checkReport(ctx, analysis) {
-  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems([...analysis.files.active, ...analysis.files.inactive])];
+  const layerFiles = [...analysis.files.active, ...analysis.files.inactive];
+  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems(layerFiles)];
+  const info = fileProblems(layerFiles, 'info');
   const proposed = analysis.files.team.filter((f) => f.source?.value === 'proposed').map((f) => ({ path: f.display, line: f.source.line }));
   const passed = problems.length === 0 && analysis.pstackCheck.status !== 'failed';
-  return { pstack: ctx.pstack.version, problems, proposed, pstackCheck: analysis.pstackCheck, passed };
+  return { pstack: ctx.pstack.version, problems, info, proposed, pstackCheck: analysis.pstackCheck, passed };
 }
 
 const problemLine = (p) => `${p.path}:${p.line}: ${p.message}`;
@@ -726,6 +747,7 @@ function renderCheck(report, pstack) {
   return [
     ...(report.pstackCheck.status === 'skipped' ? [] : report.pstackCheck.lines),
     ...report.problems.map(problemLine),
+    ...report.info.map((p) => `info: ${problemLine(p)}`),
     ...report.proposed.map((p) => `proposed: ${p.path}:${p.line}`),
     report.passed
       ? `check passed: pstack ${pstack}`

@@ -4,11 +4,21 @@
   "description": "Validator findings for every active layer file, plus pstack's own checker result.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["pstack", "problems", "proposed", "pstackCheck", "recorded"],
+  "required": ["pstack", "problems", "info", "proposed", "pstackCheck", "recorded"],
   "properties": {
     "pstack": { "type": ["string", "null"], "description": "pstack version checked against, from the plugin manifest or a folder named like a version. null when neither gives one." },
     "problems": {
       "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "line", "message"],
+        "properties": { "path": { "type": "string" }, "line": { "type": "integer", "minimum": 1 }, "message": { "type": "string" } }
+      }
+    },
+    "info": {
+      "type": "array",
+      "description": "Findings that do not fail the check, such as a handoff to a playbook that only another org's or repo's layer defines.",
       "items": {
         "type": "object",
         "additionalProperties": false,
