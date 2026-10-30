@@ -320,6 +320,7 @@ function playbookIndex(pstackDir, playbooks, files) {
   const sections = new Set(headings.filter(Boolean).map(kebab));
   return {
     resolve: (name) => stems.get(kebab(name)) ?? null,
+    names: [...stems.keys()],
     ignored: (name) => [kebab(name), `principle-${kebab(name)}`].some((k) => sections.has(k) || skills.has(k)),
   };
 }
@@ -367,7 +368,32 @@ function handoffRefs(text, index) {
       at += join[0].length;
     }
   }
-  return found.sort((a, b) => a.at - b.at).map(({ name, stem }) => ({ name, stem }));
+  return found.sort((a, b) => a.at - b.at);
+}
+
+const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const nameAlternatives = (index) => [...index.names].sort((a, b) => b.length - a.length).map((name) => escapeRegex(name).replaceAll('-', '[ -]')).join('|');
+
+/** A known playbook named after a run-like word that handoffRefs did not register, so no handoff or check sees it. */
+function nearMisses(text, index) {
+  if (index.names.length === 0) return [];
+  const registered = handoffRefs(text, index);
+  const re = new RegExp(`\\b(?:runs?|running|ran|per)\\s+(?:\\*\\*|\`)?(${nameAlternatives(index)})(?![\\w-])`, 'gi');
+  return [...text.matchAll(re)]
+    .filter((m) => !registered.some((r) => r.at >= m.index && r.at <= m.index + m[0].length))
+    .map((m) => ({ phrase: m[0].replace(/\*\*|`/g, ''), stem: index.resolve(m[1]) }));
+}
+
+/** Each `<playbook> step N` or `steps N, M` that names a step the merged playbook lacks. */
+function badStepRefs(text, index, playbooks) {
+  if (index.names.length === 0) return [];
+  const re = new RegExp(`(${nameAlternatives(index)})(?:\\*\\*|\`)?\\s+steps?\\s+(\\d+(?:\\s*(?:,|and|or|&)\\s*\\d+)*)(?![\\w-])`, 'gi');
+  return [...text.matchAll(re)].flatMap((m) => {
+    const stem = index.resolve(m[1]);
+    const count = playbooks.get(stem)?.steps.length;
+    if (count === undefined) return [];
+    return m[2].match(/\d+/g).map(Number).filter((n) => n < 1 || n > count).map((n) => ({ stem, n, count }));
+  });
 }
 
 /** Each other playbook the steps, then the notes, hand off to, in order of first mention. */
@@ -754,6 +780,12 @@ function analyze(ctx, { pstackCheck }) {
   const elsewhere = configStems(ctx);
   for (const file of layerFiles) {
     for (const { text, line } of file.prose) {
+      for (const { phrase, stem } of nearMisses(text, index)) {
+        file.problems.push({ line, message: `"${phrase}" names ${stem} but does not register as a handoff; write playbooks/${stem}.md` });
+      }
+      for (const { stem, n, count } of badStepRefs(text, index, playbooks)) {
+        file.problems.push({ line, message: `${stem} step ${n}, but ${stem} has ${count} ${count === 1 ? 'step' : 'steps'}` });
+      }
       for (const ref of handoffRefs(text, index)) {
         if (ref.stem) continue;
         const where = elsewhere.get(kebab(ref.name));
@@ -818,7 +850,7 @@ const headerParts = (ctx) => [ctx.repo.name, ctx.repo.owner ?? ctx.repo.org, `ps
 function renderCompute(r) {
   const sections = [`# ${r.playbook} (${r.header.join(' · ')})`];
   if (r.withheld) {
-    sections.push(`No steps: a layer file that edits ${r.playbook} has problems, so some of its edits would be lost. Fix the files below, then run \`jstack-cli playbook check\` until it passes.`);
+    sections.push(`No steps: a layer file that edits ${r.playbook} has problems, so some of its edits would be lost. Fix the files below, then run \`playbook check\` until it passes.`);
   } else sections.push(
     r.steps
       .map((s, i) => {
