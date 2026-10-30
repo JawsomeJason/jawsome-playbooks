@@ -261,7 +261,15 @@ function cascade(bundled, files, order) {
     for (const file of files.filter((f) => f.layer === layer)) {
       const valid = (stem) => (file.team ? bundled.has(stem) : known.has(stem));
       for (const stem of file.extends) {
-        if (!valid(stem)) file.problems.push({ line: file.extendsLine, message: `extends ${stem}, which pstack ${file.pstackName} has no playbook for` });
+        if (valid(stem)) continue;
+        const above = files.find((f) => !f.team && f !== file && f.stem === stem && f.extends.length === 0 && rank(f.layer) >= rank(layer));
+        const message = above
+          ? `extends ${stem}, which the ${above.layer} layer defines, and a layer extends only playbooks below it`
+          : `extends ${stem}, which pstack ${file.pstackName} has no playbook for`;
+        file.problems.push({ line: file.extendsLine, message });
+      }
+      if (!file.team && known.has(file.stem) && !file.extends.includes(file.stem)) {
+        file.info.push({ line: file.extendsLine, message: `targets ${file.stem} by its file name; add \`extends: ${[...file.extends, file.stem].join(', ')}\` to say so` });
       }
       file.targets = [...new Set([...file.extends.filter(valid), ...(known.has(file.stem) ? [file.stem] : [])])];
       if (file.targets.length === 0 && file.extends.length === 0) {

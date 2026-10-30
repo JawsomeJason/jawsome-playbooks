@@ -1,4 +1,5 @@
 ---
+extends: triage
 when: triaging a web bug report
 ---
 

@@ -186,6 +186,7 @@ when: handing work between playbooks
 6. Run read-only checks per PR.
 `,
     '03-repos/web/02-overrides/handoffs.md': `---
+extends: handoffs
 when: handing work between web playbooks
 ---
 
@@ -420,6 +421,38 @@ test('check reports every validator rule with path and line', () => {
     'check failed: 10 problems against pstack 1.0.0',
     'proposed: .agents/playbooks/babysit.md:5',
   ].sort());
+  assert.equal(r.status, 1);
+});
+
+test('a file that targets a playbook only by its stem gets an info line, and the cascade still applies it', () => {
+  const stemOnly = `---
+when: building a feature
+---
+
+- **In** "Name the data shape." stem words.
+`;
+  const w = world({ files: { '01-user/feature.md': stemOnly } });
+  const r = w.run(['check']);
+  assert.ok(lines(r.stdout).includes(`info: ${w.config}/01-user/feature.md:1: targets feature by its file name; add \`extends: feature\` to say so`));
+  assert.equal(r.status, 0, r.stdout);
+  const listed = JSON.parse(w.run(['check', '--json']).stdout);
+  assert.deepEqual(listed.problems, []);
+  const before = w.run(['playbook', 'compute', 'feature']).stdout;
+  assert.match(before, /stem words/);
+  writeFileSync(join(w.config, '01-user/feature.md'), stemOnly.replace('when:', 'extends: feature\nwhen:'));
+  assert.ok(!w.run(['check']).stdout.includes('targets feature'));
+  assert.equal(w.run(['playbook', 'compute', 'feature']).stdout, before);
+});
+
+test('extends of a playbook the same layer defines says so instead of blaming pstack', () => {
+  const w = world({
+    files: {
+      '01-user/aaa-flow.md': `---\nextends: zzz-flow\nwhen: a flow\n---\n\n- A note.\n`,
+      '01-user/zzz-flow.md': `---\nwhen: another flow\n---\n\n1. Do the thing.\n`,
+    },
+  });
+  const r = w.run(['check']);
+  assert.ok(lines(r.stdout).includes(`${w.config}/01-user/aaa-flow.md:2: extends zzz-flow, which the user layer defines, and a layer extends only playbooks below it`));
   assert.equal(r.status, 1);
 });
 

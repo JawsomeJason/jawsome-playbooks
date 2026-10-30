@@ -56,7 +56,7 @@ source: proposed
 - A list item with no verb is a note for the playbook.
 ```
 
-- `extends` lists bundled pstack playbook stems, separated by commas. A file with an empty `extends` and a stem that names no lower playbook defines a standalone playbook, whose numbered steps are its body.
+- `extends` lists bundled pstack playbook stems, separated by commas. An `extends` stem may also name a standalone playbook that a lower layer defines. A file with an empty `extends` and a stem that names no lower playbook defines a standalone playbook, whose numbered steps are its body.
 - `when` is required, because poteto-mode matches a standalone playbook only by this sentence.
 - `layer` is required in team files, and is `org.standard` or `repo.standard`. Every other file takes its layer from its folder.
 - `source` is required in team files. It is `proposed`, or a citation of where the file's rules come from, so a teammate can trace each one. `check` lists every `proposed` one.
@@ -72,7 +72,7 @@ source: proposed
 ## Cascade
 
 1. The bundled playbook splits into steps. A line `N. ` at column 0 starts a step. The lines after it belong to that step until the next step, or until a blank line followed by a line with no indent. A playbook with no numbered steps takes each paragraph that opens with a bold lead sentence as a step. Other text is intro, and no quote may match in it.
-2. Each layer, in cascade order, applies its files in name order, and applies each file's edits in line order. A file applies to a playbook when the playbook is in its `extends`, or when the file's stem names a playbook that pstack or a lower layer defines.
+2. Each layer, in cascade order, applies its files in name order, and applies each file's edits in line order. A file applies to a playbook when the playbook is in its `extends`, or, deprecated, when the file's stem names a playbook that pstack or a lower layer defines. `check` prints an `info:` line for a file that relies on its stem alone; write the stem in `extends` instead, because a later release stops reading file names.
 3. Quotes match with whitespace collapsed, against the steps as the lower layers left them. Team files match only pstack's own text, because pstack's checker reads them without the other layers.
 4. `After` and `Before` insert a new step. `Replace` strikes the quoted words inside the step and adds the change text after them. `In` appends the change text to the step. A line with no verb becomes a note.
 5. Each step records its origin layer and every layer that edited it. An `In` or `Replace` from a layer above the step's origin is an override, and `compute` lists it so the agent can name it in its reply.
