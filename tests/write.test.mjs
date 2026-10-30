@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { CLI, PSTACK, world } from './helpers.mjs';
+import { CLI, PSTACK, tempDir, world } from './helpers.mjs';
 
 const read = (path) => readFileSync(path, 'utf8');
 const piped = (w, args, input) => {
@@ -133,4 +133,33 @@ test('a repo write that names a step only that repo has passes, because no other
   recorded(w);
   const r = w.run(['playbook', 'extend', 'babysit', 'r', 'in', 'Declare the mode', '--with', 'see babysit step 6', '--when', 'w', '--layer', 'repo']);
   assert.equal(r.status, 0, r.stderr);
+});
+
+const LATIN1 = Buffer.concat([Buffer.from('---\nextends: babysit\nwhen: Babysitting\n---\n\n- **In** "Declare the mode" Caf'), Buffer.from([0xe9]), Buffer.from('.\n')]);
+
+test('a refused extend restores a file that is not UTF-8 byte for byte, and a passing one keeps its bytes', () => {
+  const w = world();
+  const path = join(w.config, '01-user', 'combo.md');
+  writeFileSync(path, LATIN1);
+  assert.equal(w.run(['playbook', 'extend', 'babysit', 'combo', 'in', 'Declare the mode', '--with', 'see babysit step 99']).status, 1);
+  assert.deepEqual(readFileSync(path), LATIN1);
+  assert.equal(w.run(['playbook', 'extend', 'feature', 'combo', 'in', 'Name the data shape', '--with', 'Thé.']).status, 0);
+  const kept = readFileSync(path);
+  assert.ok(kept.includes(Buffer.from([0xe9, 0x2e, 0x0a])), 'the 0xE9 byte survives');
+  assert.ok(kept.includes(Buffer.from('extends: babysit, feature\n')));
+  assert.ok(kept.includes(Buffer.from('Thé.\n')));
+});
+
+test('a check that throws after the write still restores the file', () => {
+  const pstack = join(tempDir(), '1.0.0');
+  cpSync(PSTACK, pstack, { recursive: true });
+  const w = world({ files: { '01-user/other.md': '---\nextends: babysit\nwhen: Other\n---\n\n- **In** "Declare the mode" Fine.\n' } });
+  const path = join(w.config, '01-user', 'combo.md');
+  writeFileSync(path, LATIN1);
+  // The stub runs inside the check, so the file it locks makes the next read throw only after the write landed.
+  writeFileSync(join(pstack, 'skills', 'poteto-mode', 'scripts', 'check-playbooks.mjs'), `import { chmodSync, readFileSync } from 'node:fs';\nif (readFileSync(${JSON.stringify(path)}).includes('boom')) chmodSync(${JSON.stringify(join(w.config, '01-user', 'other.md'))}, 0);\n`);
+  const r = w.run(['playbook', 'extend', 'babysit', 'combo', 'in', 'Declare the mode', '--with', 'boom'], { env: { JSTACK_PSTACK_DIR: pstack } });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /EACCES/);
+  assert.deepEqual(readFileSync(path), LATIN1);
 });
