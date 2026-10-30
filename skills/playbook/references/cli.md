@@ -4,12 +4,14 @@
 playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
 playbook show <playbook> [--repo <repo>] [--json] [--pstack <dir-or-version>]
 playbook locate <playbook> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
+playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
 playbook check [--repo <repo>] [--json] [--pstack <dir-or-version>]
 playbook doctor [--fix | --json]
 playbook --help
 ```
 
-playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/playbook` and `bin/jstack-cli` import the script, so one symlink each puts the commands on `PATH`. `show` is the main name of the command that prints a playbook, and `compute` stays as an alias of it. `jstack-cli` is a compatibility alias of `playbook`: it takes the same flags, and spells the playbook commands `jstack-cli playbook list|show|compute|locate`, with `jstack-cli check` and `jstack-cli doctor` unchanged. The command is `playbook`, not `jstack`, because Java development kits install a `jstack` of their own that can shadow it on `PATH`.
+playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/playbook` and `bin/jstack-cli` import the script, so one symlink each puts the commands on `PATH`. `show` is the main name of the command that prints a playbook, and `compute` stays as an alias of it. `jstack-cli` is a compatibility alias of `playbook`: it takes the same flags, and spells the playbook commands `jstack-cli playbook list|show|compute|locate|extend|new`, with `jstack-cli check` and `jstack-cli doctor` unchanged. The command is `playbook`, not `jstack`, because Java development kits install a `jstack` of their own that can shadow it on `PATH`.
 
 `--help` and `-h` print the usage and exit 0. Any other word in place of a command, such as `help`, prints the usage and exits 2.
 
@@ -19,6 +21,10 @@ playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. 
 | --- | --- |
 | `--repo <repo>` | Sets the repo key. When it differs from the current checkout's key, jstack-cli ignores the checkout and reads team files from `<config>/03-repos/<repo>/01-team/`. |
 | `--json` | Prints JSON that follows the command's schema in [schemas/](schemas/). |
+| `--layer user\|org\|repo` | `extend` and `new` only. The layer to write in. It defaults to `user`. `org` and `repo` write to that scope's `02-overrides/`, for the org or repo of the current checkout. |
+| `--with <text\|->`, `--with-file <path>` | `extend` only. The change text, from the argument, from stdin when it is `-`, or from a file. Give one. |
+| `--when <sentence>` | `extend` when it creates a file, and `new`. The `when:` sentence. |
+| `--from-file <path\|->` | `new` only. The numbered steps, from a file or stdin. |
 | `--fix` | `doctor` only. Asks before each fix, then runs it. See [doctor](#doctor). |
 | `--pstack <dir-or-version>` | Uses that pstack instead of the one jstack-cli finds. It takes a folder, or a version next to the one in use or in any plugin cache. With this flag, jstack-cli never writes `config.json`, so you can preview an upgrade. |
 
@@ -96,6 +102,27 @@ Write the edit in:
 Each layer line gives the path, `exists` or `new`, and the reason an edit there cannot anchor on the quote, if one applies. jstack-cli judges the quote against the step as the layers below that layer leave it, because that is the text the edit matches when the cascade runs. A layer's existing file is the one that already edits the playbook. A new team file in `.agents/playbooks` takes `<repo>-<playbook>.md` when `<playbook>.md` is taken. The layer that wrote the step gets `this layer wrote the step; change its text there`, because an edit line cannot anchor on text its own layer adds.
 
 A quote that names no step or more than one prints the same message `check` prints and exits 1. `--json` follows [schemas/jstack.locate.schema.json](schemas/jstack.locate.schema.json).
+
+## extend
+
+`extend` writes one edit line into a layer file, and refuses an edit that would break `check`. It is the way to change a playbook from a terminal or an agent, because it accepts only the grammar that [the layers page](layers.md#playbook-file-format) defines and adds no verb to the files.
+
+```sh
+playbook extend babysit my-babysit replace "Never require Graphite" --with - --when "Babysitting a PR" <<'TEXT'
+Use `gh pr view --json "state"` first.
+TEXT
+```
+
+- The file is `<file-name>.md` in the layer's folder. When it is missing, `extend` creates it with `extends: <parent>` and the `--when` sentence, which is then required. When it exists, `extend` appends the edit line and adds the parent to `extends` if it is missing. A file that has no `extends:` line, or an empty one, is refused, because it is a standalone playbook.
+- The verb is `after`, `before`, `replace`, or `in`. The quote holds no double quote. The text may hold backticks and quotes, and line breaks in it fold to spaces.
+- Before writing, the quote must match exactly one step of the parent as the layers below the chosen layer leave it, the same text that [`locate`](#locate) judges. On none or several, `extend` names the problem and the matching steps, writes nothing, and exits 1.
+- After writing, `extend` runs the same validation as `check` over the whole config. If it fails, it puts the prior bytes back, or removes the file it created, prints the problems, and exits 1.
+- On success it prints the path and the changed step with its layer tags.
+- Writes follow `JSTACK_CONFIG`. `extend` and `new` never write under `.agents/playbooks` or a `01-standard/` or `01-team/` folder, because team changes go through a pull request.
+
+## new
+
+`new <name> --when "<sentence>" --from-file <path|->` writes a standalone playbook: a file with an empty `extends:`, the `when:` sentence, and the body you pass. `new` refuses, with exit 1, a name that pstack or a layer at or below the chosen layer already defines, a body with no numbered steps, and a body with edit lines. It runs the same validation and rollback as `extend`.
 
 ## list
 

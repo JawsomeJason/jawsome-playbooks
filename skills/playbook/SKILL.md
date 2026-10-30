@@ -1,7 +1,7 @@
 ---
 name: playbook
 description: Lists, computes, and checks layered poteto-mode playbooks with the playbook command (jstack-cli is its compatibility alias). show, also spelled compute, prints one playbook with the personal, org, and repo layers applied over pstack's bundled steps in cascade order, tags each step with the layer that wrote it, and names every override. locate names the step a quote finds and the file each layer would hold an edit in. check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `playbook show`, when writing or editing a layer file, or after a pstack upgrade.
-argument-hint: "<list|show|compute|locate|check|doctor> [playbook] [--repo <repo>]"
+argument-hint: "<list|show|compute|locate|extend|new|check|doctor> [playbook] [--repo <repo>]"
 compatibility: Requires Node and the pstack plugin's poteto-mode skill.
 license: MIT
 ---
@@ -20,6 +20,8 @@ jstack layers the operator's personal and team playbooks over pstack's bundled p
    | `list` | `playbook list` |
    | `show <playbook>` (alias `compute`) | `playbook show <playbook>` |
    | `locate <playbook> <quote>` | `playbook locate <playbook> "<quote>"` |
+   | `extend <parent> <file-name> <verb> <quote>` | `playbook extend <parent> <file-name> <verb> "<quote>" --with -` |
+   | `new <name>` | `playbook new <name> --when "<sentence>" --from-file -` |
    | `check` | `playbook check` |
    | `doctor` | `playbook doctor` |
 
@@ -37,6 +39,7 @@ Exit code 1 means a validator problem. Report each problem line to the operator.
 
 ## Write a layer file
 
+- Write operator layer files with `playbook extend <parent> <file-name> after|before|replace|in "<quote>" --with -` (text on stdin) and `playbook new <name> --when "<sentence>" --from-file -`, not by editing the file. They refuse a quote that names no step or several, and undo a write that fails `check`. [references/cli.md](references/cli.md#extend) describes them. Team files still go through a pull request.
 - Put the file in its layer's folder and keep pstack's grammar: `extends`, `when`, and edit lines `- **After|Before|Replace|In** "quote" change`. pstack's own checker reads team files, so a new verb or key there breaks pstack. [references/layers.md](references/layers.md) gives the layout and the cascade rules.
 - Quote a short, distinctive phrase from one step, such as its bold title. pstack rewrites step text between releases, and a long quote breaks on the first rewrite.
 - In team files, quote only pstack's text, and add `layer:` and `source:`. pstack's checker sees team files without the other layers, so a quote from a lower layer fails there.

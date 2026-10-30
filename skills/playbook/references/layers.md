@@ -62,6 +62,10 @@ source: proposed
 - `source` is required in team files. It is `proposed`, or a citation of where the file's rules come from, so a teammate can trace each one. `check` lists every `proposed` one.
 - An edit line is a list item (`-`, `*`, or `N.`), then `**After**`, `**Before**`, `**Replace**`, or `**In**`, then a quote in straight double quotes, then the change text. pstack's `check-playbooks.mjs` reads the same grammar, so team files stay valid for pstack alone.
 
+## Writing layer files
+
+`playbook extend` and `playbook new` write the files in `01-user/`, `02-orgs/<org>/02-overrides/` and `03-repos/<repo>/02-overrides/`, and undo a write that fails `check`. Prefer them to editing these files by hand. Team files in `01-standard/`, `01-team/` and `.agents/playbooks` are outside both commands, because a pull request changes them.
+
 ## Repo and org resolution
 
 - The repo is the main checkout of the current directory, which jstack-cli finds through `git rev-parse --git-common-dir`. A worktree therefore resolves to the checkout that holds `.agents/playbooks`.
