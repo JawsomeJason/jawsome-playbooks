@@ -1321,7 +1321,9 @@ function checkCommands(h) {
         ? []
         : [...(isDir(binDir) ? [] : [runFix(sh('mkdir', '-p', binDir))]), runFix(link)];
       if (!(process.env.PATH ?? '').split(delimiter).includes(binDir)) fixes.push(showFix(`add ${binDir} to PATH`));
-      out.push(finding('cli', 'fail', `${name} is not on PATH`, { fixes }));
+      // jstack-cli takes every command, so a missing playbook link costs only the short name.
+      const usable = name === 'playbook' && out[0].status === 'ok';
+      out.push(finding('cli', usable ? 'info' : 'fail', `${name} is not on PATH`, { fixes }));
     } else if (!isJstack(found)) {
       out.push(finding('cli', 'fail', `${name} on PATH is ${found}, which is not jstack's`, { fixes: [showFix(`move ${found} aside, then: ${link}`)] }));
     } else {
@@ -1458,7 +1460,7 @@ function ask(question) {
 }
 
 function applyFixes(findings) {
-  for (const f of findings.filter((x) => x.status === 'fail' && x.fixes.some((fix) => fix.run))) {
+  for (const f of findings.filter((x) => x.fixes.some((fix) => fix.run))) {
     const commands = f.fixes.filter((fix) => fix.run).map((fix) => fix.command);
     process.stdout.write(`\n${f.message}\n${commands.map((c) => `  ${c}\n`).join('')}`);
     if (!/^y(es)?$/i.test(ask('run these? [y/N] '))) continue;
@@ -1475,7 +1477,7 @@ function runDoctor(opts) {
   const status = (list) => (list.some((f) => f.status === 'fail') ? 1 : 0);
   if (opts.json) return { out: { passed: status(findings) === 0, findings }, status: status(findings) };
   const report = renderDoctor(findings);
-  const fixable = findings.some((f) => f.status === 'fail' && f.fixes.some((fix) => fix.run));
+  const fixable = findings.some((f) => f.fixes.some((fix) => fix.run));
   if (!opts.fix || !fixable) return { out: report, status: status(findings) };
   if (!process.stdin.isTTY) return { out: `${report}\nfixes not run: no terminal to ask on`, status: status(findings) };
   process.stdout.write(`${report}\n`);
