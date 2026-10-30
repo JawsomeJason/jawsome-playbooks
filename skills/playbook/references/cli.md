@@ -148,12 +148,13 @@ TEXT
 | the file defining a standalone playbook has no edit lines | `standalone playbook cannot carry edits` |
 | no symlink in the config dir or `.agents/playbooks` is dangling | `broken link -> <target>` |
 | each handoff names a playbook that a layer or pstack defines | `hands off to <x>, which no layer or pstack defines` |
-| a known playbook after `run`, `runs`, `running`, `ran` or `per` registers as a handoff | `"<phrase>" names <x> but does not register as a handoff; write playbooks/<x>.md` |
-| `<playbook> step N` or `steps N, M` names a step the merged playbook has | `<x> step <N>, but <x> has <K> steps` |
+| `<playbook> step N`, `steps N, M` or `steps N-M` names a step the merged playbook has | `<x> step <N>, but <x> has <K> steps` |
 
 A handoff is a `playbooks/<stem>.md` path, or a playbook named right after `run`, `per`, `route ... to`, or `hand ... to`, as a bold title, a capitalized title, or a kebab-case stem. A title resolves to a stem the way poteto-mode resolves it: kebab case, hyphens kept, other punctuation dropped. A bold name that is a poteto-mode section or skill, such as **Comments**, is not a handoff. `check` reads only text that a layer file wrote, never the pstack words an edit quotes, because pstack owns its own text.
 
-A near-miss is a known playbook, by stem or title, that follows one of those run-like words but is written in a form the handoff parser skips, such as lowercase `run babysit` or `runs reviewing-code`. A step reference resolves `N` against the playbook's merged steps, so a reference that went stale when steps shifted fails. Both rules read only text a layer file wrote, and both fail the check, so `compute` withholds the playbook as it does for any other problem.
+A known playbook after `run`, `runs`, `running`, `ran` or `per`, in a form the handoff parser skips, such as lowercase `run babysit` or `runs reviewing-code`, prints `info: <path>:<line>: "<phrase>" may name <x> but does not register as a handoff; if it is one, write playbooks/<x>.md`. It does not fail the check or withhold a playbook, because the same words are often plain prose, such as `one PR per feature`.
+
+A step reference resolves `N` against the playbook's merged steps, so a reference that went stale when steps shifted fails, and `compute` withholds the playbook as it does for any other problem. A reference needs the whole playbook name, so `pre-shipping step 99` is not one, and it may be written `playbooks/<x>.md step N`. Both rules read only text a layer file wrote.
 
 A non-team file whose stem names a playbook, and whose `extends` does not list that stem, prints `info: <path>:<line>: targets <x> by its file name; add `extends: <x>` to say so` and does not fail the check. The file still applies to <x> by its name in this release, and a later one stops reading file names. Team files keep their rules.
 

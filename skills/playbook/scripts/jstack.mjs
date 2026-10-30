@@ -386,7 +386,7 @@ function handoffRefs(text, index) {
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const nameAlternatives = (index) => [...index.names].sort((a, b) => b.length - a.length).map((name) => escapeRegex(name).replaceAll('-', '[ -]')).join('|');
 
-/** A known playbook named after a run-like word that handoffRefs did not register, so no handoff or check sees it. */
+/** A known playbook named after a run-like word that handoffRefs did not register. It is often plain prose ("one PR per feature"), so it only informs. */
 function nearMisses(text, index) {
   if (index.names.length === 0) return [];
   const registered = handoffRefs(text, index);
@@ -396,10 +396,10 @@ function nearMisses(text, index) {
     .map((m) => ({ phrase: m[0].replace(/\*\*|`/g, ''), stem: index.resolve(m[1]) }));
 }
 
-/** Each `<playbook> step N` or `steps N, M` that names a step the merged playbook lacks. */
+/** Each `<playbook> step N`, `steps N, M` or `steps N-M` that names a step the merged playbook lacks. */
 function badStepRefs(text, index, playbooks) {
   if (index.names.length === 0) return [];
-  const re = new RegExp(`(${nameAlternatives(index)})(?:\\*\\*|\`)?\\s+steps?\\s+(\\d+(?:\\s*(?:,|and|or|&)\\s*\\d+)*)(?![\\w-])`, 'gi');
+  const re = new RegExp(`(?<![\\w-])(${nameAlternatives(index)})(?:\\.md)?(?:\\*\\*|\`)?\\s+steps?\\s+(\\d+(?:\\s*(?:,|and|or|to|&|-|–)\\s*\\d+)*)(?![\\w-])`, 'gi');
   return [...text.matchAll(re)].flatMap((m) => {
     const stem = index.resolve(m[1]);
     const count = playbooks.get(stem)?.steps.length;
@@ -792,7 +792,7 @@ function analyze(ctx, { pstackCheck }) {
   for (const file of layerFiles) {
     for (const { text, line } of file.prose) {
       for (const { phrase, stem } of nearMisses(text, index)) {
-        file.problems.push({ line, message: `"${phrase}" names ${stem} but does not register as a handoff; write playbooks/${stem}.md` });
+        file.info.push({ line, message: `"${phrase}" may name ${stem} but does not register as a handoff; if it is one, write playbooks/${stem}.md` });
       }
       for (const { stem, n, count } of badStepRefs(text, index, playbooks)) {
         file.problems.push({ line, message: `${stem} step ${n}, but ${stem} has ${count} ${count === 1 ? 'step' : 'steps'}` });
