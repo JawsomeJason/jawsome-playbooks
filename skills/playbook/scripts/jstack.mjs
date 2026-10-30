@@ -13,7 +13,7 @@ const USAGE = BARE
        playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
        playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
-       playbook check [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       playbook check [--repo <repo> | --every-repo] [--json] [--pstack <dir-or-version>]
        playbook doctor [--fix | --json]
        (compute is an alias of show; jstack-cli is a compatibility alias of playbook)`
   : `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
@@ -21,7 +21,7 @@ const USAGE = BARE
        jstack-cli playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
        jstack-cli playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
-       jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       jstack-cli check [--repo <repo> | --every-repo] [--json] [--pstack <dir-or-version>]
        jstack-cli doctor [--fix | --json]
        (compatibility alias of playbook; compute is an alias of show)`;
 
@@ -849,7 +849,21 @@ const checkJson = (report, recorded) => {
   return { ...rest, recorded };
 };
 
+/** One report over every context, in check's shape. It records no version, because it reads several contexts' files. */
+function everyRepoReport(ctx) {
+  const reports = everyContext(ctx).map((c) => checkReport(c, analyze(c, { pstackCheck: true })));
+  const once = (key) => [...new Map(reports.flatMap((r) => r[key]).map((p) => [JSON.stringify(p), p])).values()];
+  const statuses = reports.map((r) => r.pstackCheck.status);
+  const lines = [...new Set(reports.flatMap((r) => (r.pstackCheck.status === 'skipped' ? [] : r.pstackCheck.lines)))];
+  const status = statuses.includes('failed') ? 'failed' : statuses.includes('ok') ? 'ok' : 'skipped';
+  return { pstack: ctx.pstack.version, problems: once('problems'), info: once('info'), proposed: once('proposed'), pstackCheck: { status, lines }, passed: reports.every((r) => r.passed) };
+}
+
 function runCheck(ctx, opts) {
+  if (opts.everyRepo) {
+    const report = everyRepoReport(ctx);
+    return { out: opts.json ? checkJson(report, false) : renderCheck(report, ctx.pstack.name), status: report.passed ? 0 : 1 };
+  }
   const report = checkReport(ctx, analyze(ctx, { pstackCheck: true }));
   const recorded = report.passed && needsRecord(ctx);
   if (recorded) record(ctx);
@@ -1031,13 +1045,20 @@ function everyContext(ctx) {
 
 const reportLines = (report) => [...report.problems.map(problemLine), ...(report.pstackCheck.status === 'failed' ? report.pstackCheck.lines : [])];
 
+const contextLines = (contexts, ctx, analysis) => contexts.flatMap((c) => {
+  const report = checkReport(c, c === ctx && analysis ? analysis : analyze(c, { pstackCheck: true }));
+  return report.passed ? [] : reportLines(report).map((line) => `in ${c.repo.name ?? 'no repo'}: ${line}`);
+});
+
 /**
  * Writes `next`, then runs check in every context that reads the file's folder, since a user file changes what an org
- * or repo override can quote. A failure puts the prior bytes back and exits 1. `prior` is a Buffer, so a file that is
- * not UTF-8 comes back whole.
+ * or repo override can quote. Only a problem the write added refuses it, so a problem already on disk never blocks an
+ * unrelated edit or its own repair. A refusal puts the prior bytes back and exits 1. `prior` is a Buffer, so a file that
+ * is not UTF-8 comes back whole.
  */
 function commitWrite(ctx, layer, path, prior, next) {
   const contexts = everyContext(ctx).filter((c) => LAYERS[layer].dir(c) === dirname(path));
+  const before = new Set(contextLines(contexts));
   let made = null;
   for (let d = dirname(path); !lexists(d); d = dirname(d)) made = d;
   mkdirSync(dirname(path), { recursive: true });
@@ -1045,13 +1066,11 @@ function commitWrite(ctx, layer, path, prior, next) {
   try {
     writeFileSync(path, next);
     const analysis = analyze(ctx, { pstackCheck: true });
-    const failed = contexts.flatMap((c) => {
-      const report = checkReport(c, c === ctx ? analysis : analyze(c, { pstackCheck: true }));
-      return report.passed ? [] : reportLines(report).map((line) => `in ${c.repo.name ?? 'no repo'}: ${line}`);
-    });
-    if (failed.length) throw Object.assign(new UsageError(`refused: check fails with this edit, so nothing was written\n${failed.join('\n')}`), { status: 1 });
+    const after = contextLines(contexts, ctx, analysis);
+    const added = after.filter((line) => !before.has(line));
+    if (added.length) throw Object.assign(new UsageError(`refused: this edit adds check problems, so nothing was written\n${added.join('\n')}`), { status: 1 });
     committed = true;
-    return analysis;
+    return { analysis, remaining: after };
   } finally {
     if (!committed) {
       if (prior === null) rmSync(made ?? path, { recursive: true, force: true });
@@ -1059,6 +1078,8 @@ function commitWrite(ctx, layer, path, prior, next) {
     }
   }
 }
+
+const remainingNote = (remaining) => (remaining.length ? ['', 'this edit added no problems, but check still reports:', ...remaining] : []);
 
 function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
   const verb = ['After', 'Before', 'Replace', 'In'].find((v) => v.toLowerCase() === verbWord.toLowerCase());
@@ -1098,13 +1119,13 @@ function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
     if (opts.when === null || !oneLine(opts.when)) throw new UsageError('a new file needs --when "<one sentence naming the requests it serves>"');
     next = `---\nextends: ${parent}\nwhen: ${oneLine(opts.when)}\n---\n\n${edit}\n`;
   }
-  const analysis = commitWrite(ctx, layer, path, prior, next);
+  const { analysis, remaining } = commitWrite(ctx, layer, path, prior, next);
   const pb = analysis.playbooks.get(parent);
   const flat = (t) => t.replace(/\s+/g, ' ');
   const i = pb.steps.findIndex((s) => flat(effective(s)).includes(flat(text)) && (s.origin === layer || s.touched.includes(layer)));
   const out = [`${exists ? 'appended to' : 'created'} ${path}`];
   if (i >= 0) out.push('', `# ${parent} step ${i + 1} (${headerParts(ctx).join(' · ')})`, `${display(pb.steps[i])}   [${[pb.steps[i].origin, ...pb.steps[i].touched].join(' ~ ')}]`);
-  return { out: out.join('\n'), status: 0 };
+  return { out: [...out, ...remainingNote(remaining)].join('\n'), status: 0 };
 }
 
 function runNew(ctx, opts, [name]) {
@@ -1123,9 +1144,9 @@ function runNew(ctx, opts, [name]) {
   if (body.split('\n').some((l) => CHANGE_VERB.test(l))) throw Object.assign(new UsageError('refused: a standalone playbook cannot carry edit lines'), { status: 1 });
   if (body.startsWith('---')) throw new UsageError('give the steps only; new writes the front matter');
   if (parsePlaybook(body).steps.length === 0) throw Object.assign(new UsageError('refused: the body has no numbered steps (a line "1. " at column 0 starts one)'), { status: 1 });
-  const analysis = commitWrite(ctx, layer, path, null, `---\nextends:\nwhen: ${when}\n---\n\n${body}\n`);
+  const { analysis, remaining } = commitWrite(ctx, layer, path, null, `---\nextends:\nwhen: ${when}\n---\n\n${body}\n`);
   const pb = analysis.playbooks.get(name);
-  return { out: `created ${path}\n\n# ${name} (${headerParts(ctx).join(' · ')})\n${pb.steps.map((s, i) => `${i + 1}. ${display(s)}   [${s.origin}]`).join('\n')}`, status: 0 };
+  return { out: `created ${path}\n\n# ${name} (${headerParts(ctx).join(' · ')})\n${pb.steps.map((s, i) => `${i + 1}. ${display(s)}   [${s.origin}]`).join('\n')}${remainingNote(remaining).join('\n')}`, status: 0 };
 }
 
 function runList(ctx, opts) {
@@ -1478,12 +1499,13 @@ const GROUP_VERBS = new Set(['list', 'show', 'compute', 'locate', 'extend', 'new
 const VERB_ALIASES = { compute: 'show' };
 
 function parseArgs(argv) {
-  const opts = { json: false, fix: false, help: false, repo: null, pstack: null, with: null, withFile: null, when: null, fromFile: null, layer: null };
+  const opts = { json: false, fix: false, help: false, everyRepo: false, repo: null, pstack: null, with: null, withFile: null, when: null, fromFile: null, layer: null };
   const words = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--json') opts.json = true;
     else if (arg === '--fix') opts.fix = true;
+    else if (arg === '--every-repo') opts.everyRepo = true;
     else if (arg === '--help' || arg === '-h') opts.help = true;
     else if (arg === '--repo' || arg === '--pstack') {
       const value = argv[++i];
@@ -1504,6 +1526,7 @@ function parseArgs(argv) {
   const args = rest;
   if (!command || args.length !== command.arity) throw new UsageError('', { usage: true });
   if (!command.writes && WRITE_FLAGS.some((f) => opts[f] !== null)) throw new UsageError('', { usage: true });
+  if (opts.everyRepo && (command !== COMMANDS.check || opts.repo)) throw new UsageError('', { usage: true });
   if (command.writes && (opts.json || opts.fix)) throw new UsageError('', { usage: true });
   if (command === COMMANDS.doctor ? opts.repo || opts.pstack || (opts.fix && opts.json) : opts.fix) throw new UsageError('', { usage: true });
   return { opts, command, args };

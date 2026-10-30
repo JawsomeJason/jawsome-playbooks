@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // Blocks a direct Edit or Write of an operator layer file, so playbook edits go through `playbook extend` and `playbook new`,
-// which accept only valid grammar and roll back an edit that fails `check`. Team folders are not covered: they change through pull requests.
+// which accept only valid grammar and roll back an edit that adds a `check` problem. A file that has a problem stays open, because
+// a stale quote can only be repaired by hand. Team folders are not covered: they change through pull requests.
+import { spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 if (process.env.JSTACK_ALLOW_LAYER_EDITS === '1') process.exit(0);
 
@@ -16,7 +19,7 @@ try {
 const file = input.tool_input?.file_path;
 if (typeof file !== 'string') process.exit(0);
 
-const LAYER_FILE = /^(?:01-user|02-orgs\/[^/]+\/02-overrides|03-repos\/[^/]+\/02-overrides)\/.+\.md$/;
+const LAYER_FILE = /^(?:01-user|02-orgs\/[^/]+\/02-overrides|03-repos\/[^/]+\/02-overrides)\/(?!README\.md$)[^/]+\.md$/;
 
 // The nearest existing ancestor is resolved, so a file that does not exist yet still resolves through its folder's symlinks.
 function real(path) {
@@ -37,10 +40,32 @@ const inLayer = [[resolve(file), config], [real(file), real(config)]].some(([pat
   return !rel.startsWith('..') && LAYER_FILE.test(rel.split('\\').join('/'));
 });
 if (!inLayer) process.exit(0);
+
+const CLI = fileURLToPath(new URL('../skills/playbook/scripts/jstack.mjs', import.meta.url));
+
+/** The paths `check` reports a problem in, in every context, or null when the check cannot run. */
+function pathsWithProblems() {
+  const r = spawnSync(process.execPath, [CLI, 'check', '--every-repo', '--json'], { encoding: 'utf8', timeout: 25000 });
+  if (r.status !== 0 && r.status !== 1) return null;
+  try {
+    return JSON.parse(r.stdout).problems.map((p) => p.path);
+  } catch {
+    return null;
+  }
+}
+
+const paths = pathsWithProblems();
+if (!paths) {
+  const message = `jstack could not run \`playbook check\`, so the direct edit of ${file} is not blocked. Run \`playbook check --every-repo\` after it.`;
+  process.stderr.write(`${message}\n`);
+  process.stdout.write(`${JSON.stringify({ systemMessage: message })}\n`);
+  process.exit(0);
+}
+if (paths.some((path) => real(path) === real(file))) process.exit(0);
 process.stderr.write(
   `${file} is a jstack layer file. Change it through the CLI so that only valid grammar lands: ` +
     '`playbook extend <parent> <file-name> after|before|replace|in "<quote>" --with <text|->` edits a playbook, ' +
-    'and `playbook new <name> --when "<sentence>" --from-file <path|->` adds a standalone one. Both run `check` and undo an edit that fails it. ' +
+    'and `playbook new <name> --when "<sentence>" --from-file <path|->` adds a standalone one. Both run `check` and undo an edit that adds a problem. A file that has a `check` problem can be edited directly, to repair it. ' +
     'To edit the file by hand anyway, set JSTACK_ALLOW_LAYER_EDITS=1.\n',
 );
 process.exit(2);

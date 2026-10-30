@@ -163,3 +163,37 @@ test('a check that throws after the write still restores the file', () => {
   assert.match(r.stderr, /EACCES/);
   assert.deepEqual(readFileSync(path), LATIN1);
 });
+
+const STALE = { '01-user/stale.md': '---\nextends: babysit\nwhen: Stale\n---\n\n- **In** "No longer in pstack" Be brief.\n' };
+
+test('a file with a stale quote does not stop an unrelated write, which says the old problem remains', () => {
+  const w = world({ files: STALE });
+  assert.equal(w.run(['check']).status, 1);
+  const r = w.run(['playbook', 'extend', 'feature', 'mine', 'in', 'Name the data shape', '--with', 'x', '--when', 'w']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(w.config, '01-user', 'mine.md')));
+  assert.match(r.stdout, /this edit added no problems, but check still reports:\n.*stale\.md:6: quote not found: "No longer in pstack"/);
+});
+
+test('a write that adds a problem next to an old one is refused and names only the new one', () => {
+  const w = world({ files: STALE });
+  const r = w.run(['playbook', 'extend', 'babysit', 'mine', 'in', 'Declare the mode', '--with', 'see babysit step 99', '--when', 'w']);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /refused: this edit adds check problems, so nothing was written/);
+  assert.match(r.stderr, /babysit step 99/);
+  assert.doesNotMatch(r.stderr, /stale\.md/);
+  assert.equal(existsSync(join(w.config, '01-user', 'mine.md')), false);
+});
+
+test('check --every-repo finds a problem the current context cannot see, and records nothing', () => {
+  const w = world();
+  recorded(w);
+  writeFileSync(join(w.config, '01-user', 'mine.md'), '---\nextends: babysit\nwhen: w\n---\n\n- **In** "Declare the mode" see babysit step 6\n');
+  assert.equal(w.run(['check']).status, 0);
+  const before = read(join(w.config, 'config.json'));
+  const r = w.run(['check', '--every-repo', '--json']);
+  assert.equal(r.status, 1);
+  assert.match(JSON.parse(r.stdout).problems[0].message, /babysit step 6, but babysit has \d steps/);
+  assert.equal(read(join(w.config, 'config.json')), before);
+  assert.equal(w.run(['check', '--every-repo', '--repo', 'web']).status, 2);
+});

@@ -39,7 +39,7 @@ Exit code 1 means a validator problem. Report each problem line to the operator.
 
 ## Write a layer file
 
-- Write operator layer files with `playbook extend <parent> <file-name> after|before|replace|in "<quote>" --with -` (text on stdin) and `playbook new <name> --when "<sentence>" --from-file -`, not by editing the file. They refuse a quote that names no step or several, and undo a write that fails `check`. [references/cli.md](references/cli.md#extend) describes them. Team files still go through a pull request.
+- Write operator layer files with `playbook extend <parent> <file-name> after|before|replace|in "<quote>" --with -` (text on stdin) and `playbook new <name> --when "<sentence>" --from-file -`, not by editing the file. They refuse a quote that names no step or several, and undo a write that adds a `check` problem. [references/cli.md](references/cli.md#extend) describes them. Team files still go through a pull request.
 - Put the file in its layer's folder and keep pstack's grammar: `extends`, `when`, and edit lines `- **After|Before|Replace|In** "quote" change`. pstack's own checker reads team files, so a new verb or key there breaks pstack. [references/layers.md](references/layers.md) gives the layout and the cascade rules.
 - Quote a short, distinctive phrase from one step, such as its bold title. pstack rewrites step text between releases, and a long quote breaks on the first rewrite.
 - In team files, quote only pstack's text, and add `layer:` and `source:`. pstack's checker sees team files without the other layers, so a quote from a lower layer fails there.

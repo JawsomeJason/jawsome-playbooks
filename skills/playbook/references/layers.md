@@ -64,7 +64,7 @@ source: proposed
 
 ## Writing layer files
 
-`playbook extend` and `playbook new` write the files in `01-user/`, `02-orgs/<org>/02-overrides/` and `03-repos/<repo>/02-overrides/`, and undo a write that fails `check`. Prefer them to editing these files by hand. In Claude Code, the plugin's hook blocks a direct Edit or Write of a `.md` file in those folders and names the two commands, and `JSTACK_ALLOW_LAYER_EDITS=1` lets a hand edit through. The hook does not cover a write from a Bash command. Team files in `01-standard/`, `01-team/` and `.agents/playbooks` are outside both commands, because a pull request changes them.
+`playbook extend` and `playbook new` write the files in `01-user/`, `02-orgs/<org>/02-overrides/` and `03-repos/<repo>/02-overrides/`, and undo a write that adds a `check` problem. Prefer them to editing these files by hand. In Claude Code, the plugin's hook blocks a direct Edit or Write of a top-level `.md` file, other than a `README.md`, in those folders and names the two commands. It allows a file that has a `check` problem, because a stale quote can only be repaired by hand, and it allows the edit and says so when `check` cannot run. `JSTACK_ALLOW_LAYER_EDITS=1` lets any hand edit through. The hook does not cover a write from a Bash command. Team files in `01-standard/`, `01-team/` and `.agents/playbooks` are outside both commands, because a pull request changes them.
 
 ## Repo and org resolution
 
