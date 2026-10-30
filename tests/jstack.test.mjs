@@ -199,7 +199,7 @@ test('compute withholds a playbook whose layer file hands off to a playbook noth
   const r = w.run(['playbook', 'compute', 'handoffs']);
   assert.equal(r.stdout, `# handoffs (web · acme-eng · pstack 1.0.0)
 
-No steps: a layer file that edits handoffs has problems, so some of its edits would be lost. Fix the files below, then run \`jstack-cli playbook check\` until it passes.
+No steps: a layer file that edits handoffs has problems, so some of its edits would be lost. Fix the files below, then run \`playbook check\` until it passes.
 
 Problems:
 ${w.config}/01-user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines
@@ -223,6 +223,62 @@ test('check flags a layer handoff nothing defines, and leaves section names and 
     'proposed: .agents/playbooks/babysit.md:5',
     'check failed: 3 problems against pstack 1.0.0',
   ]);
+  assert.equal(r.status, 1);
+});
+
+const LINKS = {
+  files: {
+    '01-user/watching-review-asks.md': `---
+when: watching for review asks
+---
+
+1. **Read the asks.** List them.
+2. **Answer each.** Reply in the thread.
+3. **Report.** Say what changed.
+`,
+    '01-user/reviewing-code.md': `---
+when: reviewing code
+---
+
+1. **Read the diff.** All of it.
+`,
+    '01-user/links.md': `---
+when: linking playbooks
+---
+
+1. Run babysit once the PR is open.
+2. The frontier runs reviewing-code on each PR.
+3. Run Babysit, which covers watching-review-asks steps 2 and 3.
+4. Then babysit step 6 stops at the human's line.
+5. After watching-review-asks step 4, ping the author.
+6. Also see babysit steps 2, 9.
+7. Run \`babysit\`.
+8. Run read-only checks per PR, and a step 2 retry.
+`,
+  },
+};
+
+test('check flags a near-miss link and a step the playbook lacks, and leaves correct prose alone', () => {
+  const w = world(LINKS);
+  const r = w.run(['check']);
+  const links = `${w.config}/01-user/links.md`;
+  assert.deepEqual(lines(r.stdout), [
+    OK_LINE,
+    `${links}:5: "Run babysit" names babysit but does not register as a handoff; write playbooks/babysit.md`,
+    `${links}:6: "runs reviewing-code" names reviewing-code but does not register as a handoff; write playbooks/reviewing-code.md`,
+    `${links}:9: watching-review-asks step 4, but watching-review-asks has 3 steps`,
+    `${links}:10: babysit step 9, but babysit has 6 steps`,
+    `${links}:11: "Run babysit" names babysit but does not register as a handoff; write playbooks/babysit.md`,
+    'proposed: .agents/playbooks/babysit.md:5',
+    'check failed: 5 problems against pstack 1.0.0',
+  ]);
+  assert.equal(r.status, 1);
+});
+
+test('compute withholds a playbook whose layer file has a near-miss link', () => {
+  const w = world(LINKS);
+  const r = w.run(['playbook', 'compute', 'links']);
+  assert.match(r.stdout, /^No steps: /m);
   assert.equal(r.status, 1);
 });
 
@@ -400,7 +456,7 @@ test('compute withholds the steps when a file touching the playbook has problems
   const w = world(BROKEN);
   const r = w.run(['playbook', 'compute', 'babysit']);
   assert.match(r.stdout, /^# babysit \(web · acme-eng · pstack 1\.0\.0\)$/m);
-  assert.match(r.stdout, /^No steps: .*`jstack-cli playbook check`/m);
+  assert.match(r.stdout, /^No steps: .*`playbook check`/m);
   assert.doesNotMatch(r.stdout, /^1\. /m);
   assert.match(r.stdout, /^Problems:$/m);
   assert.ok(r.stdout.includes(`${w.config}/01-user/broken.md:5: quote matches steps 1 and 2; make it longer`), r.stdout);
