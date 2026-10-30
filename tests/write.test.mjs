@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { CLI, PSTACK, world } from './helpers.mjs';
@@ -102,4 +102,35 @@ test('new refuses a name that a lower layer defines', () => {
 test('write options are refused on read commands', () => {
   const w = world();
   assert.equal(w.run(['check', '--with', 'x']).status, 2);
+});
+
+/** Config that records `web`, so a write made from outside its checkout still has to hold there. */
+const recorded = (w) => writeFileSync(join(w.config, 'config.json'), JSON.stringify({ handle: 'tester', pstack: '1.0.0', orgs: { acme: { owners: ['acme-eng'] } }, repos: { web: { checkout: w.repo } } }));
+
+test('a user write that breaks a repo it reaches is refused, from outside that repo too', () => {
+  const w = world({ files: { '02-orgs/acme/02-overrides/mode.md': '---\nextends: babysit\nwhen: Acme\n---\n\n- **In** "Declare the mode" Be brief.\n' } });
+  recorded(w);
+  const r = w.run(['playbook', 'extend', 'babysit', 'tmpf', 'replace', 'Declare the mode', '--with', 'the rules', '--when', 'w'], { cwd: w.outside });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /nothing was written/);
+  assert.match(r.stderr, /in web: .*02-overrides\/mode\.md:\d+: quote not found: "Declare the mode"/);
+  assert.equal(existsSync(join(w.config, '01-user', 'tmpf.md')), false);
+  assert.equal(w.run(['check', '--repo', 'web']).status, 0);
+});
+
+test('a user write that breaks only the context with no repo is refused from inside a repo', () => {
+  const w = world();
+  recorded(w);
+  assert.equal(w.run(['playbook', 'show', 'babysit']).stdout.match(/^\d+\. /gm).length, 6);
+  const r = w.run(['playbook', 'extend', 'babysit', 'mine', 'in', 'Declare the mode', '--with', 'see babysit step 6', '--when', 'w']);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /in no repo: .*mine\.md:\d+: babysit step 6, but babysit has \d steps/);
+  assert.equal(existsSync(join(w.config, '01-user', 'mine.md')), false);
+});
+
+test('a repo write that names a step only that repo has passes, because no other context reads the file', () => {
+  const w = world();
+  recorded(w);
+  const r = w.run(['playbook', 'extend', 'babysit', 'r', 'in', 'Declare the mode', '--with', 'see babysit step 6', '--when', 'w', '--layer', 'repo']);
+  assert.equal(r.status, 0, r.stderr);
 });

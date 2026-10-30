@@ -530,8 +530,7 @@ function orgFromLinks(teamDir, configDir) {
   return null;
 }
 
-function resolveRepo(opts, configDir, settings) {
-  const checkout = findCheckout(process.cwd());
+function resolveRepo(opts, configDir, settings, checkout = findCheckout(process.cwd())) {
   const useCheckout = checkout && (!opts.repo || opts.repo === checkout.name);
   const name = opts.repo ?? checkout?.name ?? null;
   const owner = useCheckout ? checkout.owner : null;
@@ -1018,19 +1017,39 @@ function below(ctx, layer) {
   return { order, playbooks: cascade(readBundled(ctx), collectFiles(ctx).active.filter((f) => order.includes(f.layer)), order) };
 }
 
-/** Writes `next`, then runs check over the whole config. A failure puts the prior bytes back and exits 1. */
-function commitWrite(ctx, path, prior, next) {
+/** The current context, the one with no repo, and each repo config.json records, read from its checkout when it has one. */
+function everyContext(ctx) {
+  const at = (name) => {
+    const recorded = name && ctx.settings.repos[name].checkout;
+    const checkout = recorded && isDir(recorded) ? findCheckout(recorded) : null;
+    return { ...ctx, repo: resolveRepo({ repo: name }, ctx.configDir, ctx.settings, checkout) };
+  };
+  const all = [ctx, at(null), ...Object.keys(ctx.settings?.repos ?? {}).map(at)];
+  const key = ({ repo }) => JSON.stringify([repo.name, repo.org, repo.teamDir]);
+  return all.filter((c, i) => all.findIndex((o) => key(o) === key(c)) === i);
+}
+
+const reportLines = (report) => [...report.problems.map(problemLine), ...(report.pstackCheck.status === 'failed' ? report.pstackCheck.lines : [])];
+
+/**
+ * Writes `next`, then runs check in every context that reads the file's folder, since a user file changes what an org
+ * or repo override can quote. A failure puts the prior bytes back and exits 1.
+ */
+function commitWrite(ctx, layer, path, prior, next) {
+  const contexts = everyContext(ctx).filter((c) => LAYERS[layer].dir(c) === dirname(path));
   let made = null;
   for (let d = dirname(path); !lexists(d); d = dirname(d)) made = d;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, next);
   const analysis = analyze(ctx, { pstackCheck: true });
-  const report = checkReport(ctx, analysis);
-  if (report.passed) return analysis;
+  const failed = contexts.flatMap((c) => {
+    const report = checkReport(c, c === ctx ? analysis : analyze(c, { pstackCheck: true }));
+    return report.passed ? [] : reportLines(report).map((line) => `in ${c.repo.name ?? 'no repo'}: ${line}`);
+  });
+  if (failed.length === 0) return analysis;
   if (prior === null) rmSync(made ?? path, { recursive: true, force: true });
   else writeFileSync(path, prior);
-  const lines = [...report.problems.map(problemLine), ...(report.pstackCheck.status === 'failed' ? report.pstackCheck.lines : [])];
-  throw Object.assign(new UsageError(`refused: check fails with this edit, so nothing was written\n${lines.join('\n')}`), { status: 1 });
+  throw Object.assign(new UsageError(`refused: check fails with this edit, so nothing was written\n${failed.join('\n')}`), { status: 1 });
 }
 
 function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
@@ -1069,7 +1088,7 @@ function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
     if (opts.when === null || !oneLine(opts.when)) throw new UsageError('a new file needs --when "<one sentence naming the requests it serves>"');
     next = `---\nextends: ${parent}\nwhen: ${oneLine(opts.when)}\n---\n\n${edit}\n`;
   }
-  const analysis = commitWrite(ctx, path, prior, next);
+  const analysis = commitWrite(ctx, layer, path, prior, next);
   const pb = analysis.playbooks.get(parent);
   const flat = (t) => t.replace(/\s+/g, ' ');
   const i = pb.steps.findIndex((s) => flat(effective(s)).includes(flat(text)) && (s.origin === layer || s.touched.includes(layer)));
@@ -1094,7 +1113,7 @@ function runNew(ctx, opts, [name]) {
   if (body.split('\n').some((l) => CHANGE_VERB.test(l))) throw Object.assign(new UsageError('refused: a standalone playbook cannot carry edit lines'), { status: 1 });
   if (body.startsWith('---')) throw new UsageError('give the steps only; new writes the front matter');
   if (parsePlaybook(body).steps.length === 0) throw Object.assign(new UsageError('refused: the body has no numbered steps (a line "1. " at column 0 starts one)'), { status: 1 });
-  const analysis = commitWrite(ctx, path, null, `---\nextends:\nwhen: ${when}\n---\n\n${body}\n`);
+  const analysis = commitWrite(ctx, layer, path, null, `---\nextends:\nwhen: ${when}\n---\n\n${body}\n`);
   const pb = analysis.playbooks.get(name);
   return { out: `created ${path}\n\n# ${name} (${headerParts(ctx).join(' · ')})\n${pb.steps.map((s, i) => `${i + 1}. ${display(s)}   [${s.origin}]`).join('\n')}`, status: 0 };
 }
