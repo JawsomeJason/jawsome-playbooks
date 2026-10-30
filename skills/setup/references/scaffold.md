@@ -24,7 +24,7 @@ Create `config.json` only when it is missing:
 }
 ```
 
-`modeTrigger` is `manual`, `auto`, or `session` for picks A, B, and C. A new file has no `pstack` key, because the first passing `jstack-cli check` writes the version it resolved. When the file exists, change only the keys whose answers changed. Show the operator the diff, and write the file after they agree. Keep keys you do not recognize, because a later jstack may use them.
+`modeTrigger` is `manual`, `auto`, or `session` for picks A, B, and C. A new file has no `pstack` key, because the first passing `playbook check` writes the version it resolved. When the file exists, change only the keys whose answers changed. Show the operator the diff, and write the file after they agree. Keep keys you do not recognize, because a later jstack may use them.
 
 ## Link the team folder into one repo
 
@@ -60,7 +60,7 @@ mkdir -p "$MAIN/.agents"
 
 When `.agents/playbooks` already exists and is not that link, stop and show the operator what is there. It may hold the repo's own tracked playbooks, and replacing it would delete their work.
 
-Record the main checkout as `repos.<repo>.checkout` in `config.json`, with the diff shown first, as for any other change to the file. `jstack-cli doctor` reads it to find the checkout from any directory.
+Record the main checkout as `repos.<repo>.checkout` in `config.json`, with the diff shown first, as for any other change to the file. `playbook doctor` reads it to find the checkout from any directory.
 
 Keep the link out of the repo's status without touching its tracked `.gitignore`:
 

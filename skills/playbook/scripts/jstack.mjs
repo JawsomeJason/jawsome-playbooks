@@ -5,11 +5,21 @@ import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const USAGE = `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack-cli playbook compute <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+// bin/playbook sets this before importing the script; jstack-cli and a direct run leave it unset.
+const BARE = globalThis.jstackBin === 'playbook';
+const USAGE = BARE
+  ? `usage: playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       playbook check [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       playbook doctor [--fix | --json]
+       (compute is an alias of show; jstack-cli is a compatibility alias of playbook)`
+  : `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       jstack-cli playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack-cli doctor [--fix | --json]`;
+       jstack-cli doctor [--fix | --json]
+       (compatibility alias of playbook; compute is an alias of show)`;
 
 class UsageError extends Error {
   constructor(message, { usage = false } = {}) {
@@ -982,7 +992,7 @@ function onPath(name) {
   return null;
 }
 
-/** True when the command at `path` resolves to the bin/jstack-cli of a jstack checkout or install. */
+/** True when the command at `path` resolves to a bin/ script of a jstack checkout or install. */
 const isJstack = (path) => {
   const real = realOr(path);
   return Boolean(real) && isFile(join(dirname(real), '..', 'skills', 'playbook', 'scripts', 'jstack.mjs'));
@@ -1071,24 +1081,26 @@ function checkPlugin(h) {
 }
 
 function checkCommands(h) {
-  const clone = join(h.home, '.claude', 'plugins', 'marketplaces', 'jstack', 'bin', 'jstack-cli');
-  const source = h.claude && isFile(clone) ? clone : SELF_BIN;
   const binDir = join(h.home, '.local', 'bin');
-  const dest = join(binDir, 'jstack-cli');
-  const link = sh('ln', '-s', source, dest);
   const out = [];
-  const cli = onPath('jstack-cli');
-  if (!cli) {
-    const fixes = lexists(dest)
-      ? []
-      : [...(isDir(binDir) ? [] : [runFix(sh('mkdir', '-p', binDir))]), runFix(link)];
-    if (!(process.env.PATH ?? '').split(delimiter).includes(binDir)) fixes.push(showFix(`add ${binDir} to PATH`));
-    out.push(finding('cli', 'fail', 'jstack-cli is not on PATH', { fixes }));
-  } else if (!isJstack(cli)) {
-    out.push(finding('cli', 'fail', `jstack-cli on PATH is ${cli}, which is not jstack's`, { fixes: [showFix(`move ${cli} aside, then: ${link}`)] }));
-  } else {
-    const real = realOr(cli);
-    out.push(finding('cli', 'ok', `jstack-cli: ${cli}${real === cli ? '' : ` -> ${real}`}`));
+  for (const name of ['jstack-cli', 'playbook']) {
+    const clone = join(h.home, '.claude', 'plugins', 'marketplaces', 'jstack', 'bin', name);
+    const source = h.claude && isFile(clone) ? clone : join(dirname(SELF_BIN), name);
+    const dest = join(binDir, name);
+    const link = sh('ln', '-s', source, dest);
+    const found = onPath(name);
+    if (!found) {
+      const fixes = lexists(dest)
+        ? []
+        : [...(isDir(binDir) ? [] : [runFix(sh('mkdir', '-p', binDir))]), runFix(link)];
+      if (!(process.env.PATH ?? '').split(delimiter).includes(binDir)) fixes.push(showFix(`add ${binDir} to PATH`));
+      out.push(finding('cli', 'fail', `${name} is not on PATH`, { fixes }));
+    } else if (!isJstack(found)) {
+      out.push(finding('cli', 'fail', `${name} on PATH is ${found}, which is not jstack's`, { fixes: [showFix(`move ${found} aside, then: ${link}`)] }));
+    } else {
+      const real = realOr(found);
+      out.push(finding('cli', 'ok', `${name}: ${found}${real === found ? '' : ` -> ${real}`}`));
+    }
   }
   const java = onPath('jstack');
   if (java && !isJstack(java)) out.push(finding('jstack', 'info', `jstack on PATH is ${java}, not jstack-cli; type jstack-cli to run jstack`));
@@ -1247,11 +1259,14 @@ function runDoctor(opts) {
 
 const COMMANDS = {
   'playbook list': { arity: 0, run: (opts) => runList(loadContext(opts), opts) },
-  'playbook compute': { arity: 1, run: (opts, [name]) => runCompute(loadContext(opts), opts, name) },
+  'playbook show': { arity: 1, run: (opts, [name]) => runCompute(loadContext(opts), opts, name) },
   'playbook locate': { arity: 2, run: (opts, [name, quote]) => runLocate(loadContext(opts), opts, name, quote) },
   check: { arity: 0, run: (opts) => runCheck(loadContext(opts), opts) },
   doctor: { arity: 0, run: (opts) => runDoctor(opts) },
 };
+
+const GROUP_VERBS = new Set(['list', 'show', 'compute', 'locate']);
+const VERB_ALIASES = { compute: 'show' };
 
 function parseArgs(argv) {
   const opts = { json: false, fix: false, help: false, repo: null, pstack: null };
@@ -1269,9 +1284,11 @@ function parseArgs(argv) {
     else words.push(arg);
   }
   if (opts.help) return { opts };
-  const split = words[0] === 'playbook' ? 2 : 1;
-  const command = COMMANDS[words.slice(0, split).join(' ')];
-  const args = words.slice(split);
+  const [head, ...rest] = words;
+  const grouped = BARE ? GROUP_VERBS.has(head) : head === 'playbook';
+  const verb = grouped ? (BARE ? head : rest.shift()) : head;
+  const command = COMMANDS[grouped ? `playbook ${VERB_ALIASES[verb] ?? verb}` : verb];
+  const args = rest;
   if (!command || args.length !== command.arity) throw new UsageError('', { usage: true });
   if (command === COMMANDS.doctor ? opts.repo || opts.pstack || (opts.fix && opts.json) : opts.fix) throw new UsageError('', { usage: true });
   return { opts, command, args };

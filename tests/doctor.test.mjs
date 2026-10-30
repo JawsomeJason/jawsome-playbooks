@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { BIN, CLI, PSTACK, world } from './helpers.mjs';
+import { BIN, CLI, PLAYBOOK, PSTACK, world } from './helpers.mjs';
 
 const JSTACK_PLUGIN = { id: 'jstack@jstack', version: '0.1.0', scope: 'user', enabled: true };
 const JSTACK_MARKET = { name: 'jstack', source: 'github', repo: 'JawsomeJason/jstack' };
@@ -36,6 +36,7 @@ esac
   writeFileSync(join(bin, 'jstack'), '#!/bin/sh\necho java\n');
   chmodSync(join(bin, 'jstack'), 0o755);
   symlinkSync(BIN, join(bin, 'jstack-cli'));
+  symlinkSync(PLAYBOOK, join(bin, 'playbook'));
   const layers = JSON.parse(readFileSync(join(w.config, 'config.json'), 'utf8'));
   if (w.repo) writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...layers, pstack: '0.9.0', repos: { web: { checkout: w.repo } } }, null, 2));
   mkdirSync(join(w.config, 'mode', 'tester-mode'), { recursive: true });
@@ -52,6 +53,7 @@ esac
 const HEALTHY = (w) => `✓ pstack-claude 1.0.0: ${PSTACK}
 ✓ jstack 0.1.0 installed in Claude Code (user scope)
 ✓ jstack-cli: ${w.bin}/jstack-cli -> ${realpathSync(BIN)}
+✓ playbook: ${w.bin}/playbook -> ${realpathSync(PLAYBOOK)}
 - jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
 ✓ config ${w.config}: config.json parses, handle tester
 ✓ mode skill ${w.config}/mode/tester-mode is linked into ${w.home}/.claude/skills
@@ -75,6 +77,7 @@ test('doctor passes a healthy install, only reads, and writes nothing', () => {
 function brokenWorld(opts) {
   const w = doctorWorld({ plugins: [], marketplaces: [], ...opts });
   unlinkSync(join(w.bin, 'jstack-cli'));
+  unlinkSync(join(w.bin, 'playbook'));
   unlinkSync(join(w.home, '.claude', 'skills', 'tester-mode'));
   unlinkSync(join(w.repo, '.agents', 'playbooks'));
   writeFileSync(join(w.repo, '.git', 'info', 'exclude'), '');
@@ -94,6 +97,10 @@ test('each failing check prints the exact commands that fix it, and doctor exits
     mkdir -p ${w.home}/.local/bin
     ln -s ${realpathSync(BIN)} ${w.home}/.local/bin/jstack-cli
     add ${w.home}/.local/bin to PATH
+✗ playbook is not on PATH
+    mkdir -p ${w.home}/.local/bin
+    ln -s ${realpathSync(PLAYBOOK)} ${w.home}/.local/bin/playbook
+    add ${w.home}/.local/bin to PATH
 - jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
 ✓ config ${w.config}: config.json parses, handle tester
 ✗ mode skill ${w.config}/mode/tester-mode is not linked into any skills folder
@@ -102,7 +109,7 @@ test('each failing check prints the exact commands that fix it, and doctor exits
     ln -s ${w.config}/03-repos/web/01-team ${w.repo}/.agents/playbooks
     echo /.agents/playbooks >> ${w.repo}/.git/info/exclude
 ✓ jstack-cli check --repo web passed
-doctor failed: 4 problems
+doctor failed: 5 problems
 `,
   );
   assert.equal(r.status, 1);
@@ -117,7 +124,7 @@ test('doctor --json carries each finding with its status and fixes', () => {
   assert.equal(out.passed, false);
   assert.deepEqual(
     out.findings.map((f) => [f.id, f.status]),
-    [['pstack', 'ok'], ['plugin', 'fail'], ['cli', 'fail'], ['jstack', 'info'], ['config', 'ok'], ['mode', 'fail'], ['repo:web', 'fail'], ['check:web', 'ok']],
+    [['pstack', 'ok'], ['plugin', 'fail'], ['cli', 'fail'], ['cli', 'fail'], ['jstack', 'info'], ['config', 'ok'], ['mode', 'fail'], ['repo:web', 'fail'], ['check:web', 'ok']],
   );
   assert.deepEqual(out.findings[1], {
     id: 'plugin',
@@ -208,11 +215,11 @@ const python = spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' 
 
 test('doctor --fix asks per fix on the terminal and runs only the ones answered y', { skip: python ? false : 'needs python3 for a pseudo-terminal' }, () => {
   const w = brokenWorld();
-  // Answers, in finding order: jstack plugin y, jstack-cli n, mode link y, web links y.
+  // Answers, in finding order: jstack plugin y, jstack-cli n, playbook n, mode link y, web links y.
   const pty = 'import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)';
   const r = spawnSync(python, ['-c', pty, process.execPath, CLI, 'doctor', '--fix'], {
     cwd: w.outside,
-    input: 'y\nn\ny\ny\n',
+    input: 'y\nn\nn\ny\ny\n',
     encoding: 'utf8',
     env: { ...process.env, HOME: w.home, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK, ...w.env },
   });
@@ -222,6 +229,7 @@ test('doctor --fix asks per fix on the terminal and runs only the ones answered 
     r.stdout,
   );
   assert.equal(existsSync(join(w.home, '.local', 'bin', 'jstack-cli')), false);
+  assert.equal(existsSync(join(w.home, '.local', 'bin', 'playbook')), false);
   assert.equal(readlinkSync(join(w.home, '.claude', 'skills', 'tester-mode')), join(w.config, 'mode', 'tester-mode'));
   assert.equal(readlinkSync(join(w.repo, '.agents', 'playbooks')), join(w.config, '03-repos', 'web', '01-team'));
   assert.equal(readFileSync(join(w.repo, '.git', 'info', 'exclude'), 'utf8'), '/.agents/playbooks\n');
