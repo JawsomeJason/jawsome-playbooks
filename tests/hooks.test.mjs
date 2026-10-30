@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, symlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { world } from './helpers.mjs';
 
 const HOOK = fileURLToPath(new URL('../hooks/playbook-reads.mjs', import.meta.url));
 const BUNDLED = '/home/sam/.claude/plugins/cache/pstack-claude/pstack/1.0.0/skills/poteto-mode/playbooks/feature.md';
@@ -33,4 +35,34 @@ test('the plugin registers the hook for Read and Bash', () => {
   const hooks = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8'));
   const entry = hooks.hooks.PreToolUse.find((h) => h.hooks.some((c) => c.command.includes('playbook-reads.mjs')));
   assert.equal(entry.matcher, 'Read|Bash');
+});
+
+const LAYER_HOOK = fileURLToPath(new URL('../hooks/layer-edits.mjs', import.meta.url));
+
+test('layer hook blocks an Edit of a layer file, through a symlink too, and lets other files pass', () => {
+  const w = world();
+  symlinkSync(join(w.config, '01-user'), join(w.root, 'alias'));
+  const hook = (file, env = {}) =>
+    spawnSync(process.execPath, [LAYER_HOOK], {
+      input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: file } }),
+      encoding: 'utf8',
+      env: { ...process.env, HOME: w.home, JSTACK_CONFIG: w.config, ...env },
+    });
+  for (const blocked of ['01-user/babysit.md', '01-user/new-file.md', '02-orgs/acme/02-overrides/babysit.md', '03-repos/web/02-overrides/x.md']) {
+    const r = hook(join(w.config, blocked));
+    assert.equal(r.status, 2, blocked);
+    assert.match(r.stderr, /playbook extend/);
+    assert.match(r.stderr, /playbook new/);
+  }
+  assert.equal(hook(join(w.root, 'alias', 'babysit.md')).status, 2);
+  assert.equal(hook(join(w.config, '01-user/babysit.md'), { JSTACK_ALLOW_LAYER_EDITS: '1' }).status, 0);
+  for (const fine of ['config.json', '02-orgs/acme/01-standard/babysit.md', '01-user/notes.txt'].map((f) => join(w.config, f)).concat(join(w.root, 'elsewhere.md'))) {
+    assert.equal(hook(fine).status, 0, fine);
+  }
+});
+
+test('the plugin registers the layer-edit hook for Edit and Write', () => {
+  const hooks = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8'));
+  const entry = hooks.hooks.PreToolUse.find((h) => h.hooks.some((c) => c.command.includes('layer-edits.mjs')));
+  assert.equal(entry.matcher, 'Edit|Write');
 });
