@@ -8,6 +8,10 @@ jstack ships three skills. The `playbook` skill runs `playbook` for an agent. Th
 
 In Claude Code, the plugin's hook stops an agent from reading an installed pstack playbook file directly and names the `playbook show` command to run instead. That file holds only pstack's steps, so reading it would skip your layers.
 
+A second hook blocks a direct Edit or Write of a `.md` file in `01-user/`, `02-orgs/*/02-overrides/` or `03-repos/*/02-overrides/` of your config dir, resolving symlinks, and names `playbook extend` and `playbook new` instead. Those commands accept only valid grammar and undo a write that fails `playbook check`. Set `JSTACK_ALLOW_LAYER_EDITS=1` to edit by hand anyway. The `learn` skill writes personal and overrides layers through the commands, so the hook does not stop it.
+
+The hooks have known gaps. A Bash command can still write a layer file (`sed -i`, `tee`, a redirect) or read a bundled playbook that mentions `jstack` or `playbook show` anywhere in the command. The read hook covers Read and Bash only, so Grep and Glob can still read a bundled playbook. Other harnesses have no hooks.
+
 - The [playbook reference](skills/playbook/references/cli.md) lists the commands, flags, exit codes, and environment variables.
 - [Layers, files, and the cascade](skills/playbook/references/layers.md) describes the config dir, the layer file format, and how layers apply.
 - [CONTRIBUTING.md](CONTRIBUTING.md) lists the checks and the rules for changes.
