@@ -68,6 +68,8 @@ These sections follow the steps, each only when it has entries, in this order:
 - `Overrides:` lists each override, such as `- step 6: user replaced "Never merge" (pstack)`.
 - `Problems:` lists each problem in `config.json`, in a symlink, or in a layer file that touches this playbook.
 
+When a layer file that touches this playbook has a problem, `compute` withholds the playbook: it prints no steps, only a line that says so and points to `playbook check`, then `Problems:` and the pstack result, and exits 1. With `--json`, `steps`, `notes`, `overrides`, and `handoffs` are empty. A problem in `config.json` or a symlink alone, or a pstack checker failure alone, still prints the steps and exits 1.
+
 `pstack check-playbooks:` comes last, with pstack's own checker result, or `ok`. `--json` prints the same data, shaped by [schemas/jstack.compute.schema.json](schemas/jstack.compute.schema.json).
 
 When the installed pstack differs from the `pstack` in `config.json`, `compute` runs `check` first. A pass records the new version. A failure stops with exit 1, because an upgrade that moved the quoted text would otherwise apply edits in the wrong place.
