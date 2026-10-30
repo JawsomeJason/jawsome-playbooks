@@ -1033,23 +1033,31 @@ const reportLines = (report) => [...report.problems.map(problemLine), ...(report
 
 /**
  * Writes `next`, then runs check in every context that reads the file's folder, since a user file changes what an org
- * or repo override can quote. A failure puts the prior bytes back and exits 1.
+ * or repo override can quote. A failure puts the prior bytes back and exits 1. `prior` is a Buffer, so a file that is
+ * not UTF-8 comes back whole.
  */
 function commitWrite(ctx, layer, path, prior, next) {
   const contexts = everyContext(ctx).filter((c) => LAYERS[layer].dir(c) === dirname(path));
   let made = null;
   for (let d = dirname(path); !lexists(d); d = dirname(d)) made = d;
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, next);
-  const analysis = analyze(ctx, { pstackCheck: true });
-  const failed = contexts.flatMap((c) => {
-    const report = checkReport(c, c === ctx ? analysis : analyze(c, { pstackCheck: true }));
-    return report.passed ? [] : reportLines(report).map((line) => `in ${c.repo.name ?? 'no repo'}: ${line}`);
-  });
-  if (failed.length === 0) return analysis;
-  if (prior === null) rmSync(made ?? path, { recursive: true, force: true });
-  else writeFileSync(path, prior);
-  throw Object.assign(new UsageError(`refused: check fails with this edit, so nothing was written\n${failed.join('\n')}`), { status: 1 });
+  let committed = false;
+  try {
+    writeFileSync(path, next);
+    const analysis = analyze(ctx, { pstackCheck: true });
+    const failed = contexts.flatMap((c) => {
+      const report = checkReport(c, c === ctx ? analysis : analyze(c, { pstackCheck: true }));
+      return report.passed ? [] : reportLines(report).map((line) => `in ${c.repo.name ?? 'no repo'}: ${line}`);
+    });
+    if (failed.length) throw Object.assign(new UsageError(`refused: check fails with this edit, so nothing was written\n${failed.join('\n')}`), { status: 1 });
+    committed = true;
+    return analysis;
+  } finally {
+    if (!committed) {
+      if (prior === null) rmSync(made ?? path, { recursive: true, force: true });
+      else writeFileSync(path, prior);
+    }
+  }
 }
 
 function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
@@ -1076,14 +1084,16 @@ function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
   let prior = null;
   if (exists) {
     if (lstatSync(path).isSymbolicLink() || !isFile(path)) throw new UsageError(`${path} is not a plain file`);
-    prior = readFileSync(path, 'utf8');
-    const { front, hasFront } = parseLayerText(prior);
+    prior = readFileSync(path);
+    const { front, hasFront } = parseLayerText(prior.toString('utf8'));
     if (!hasFront || !front.extends) throw new UsageError(`${path} has no extends: line; add one by hand or pick another file name`);
     const stems = front.extends.value.split(',').map((x) => x.trim()).filter(Boolean);
     if (stems.length === 0) throw new UsageError(`${path} defines a standalone playbook; pick another file name`);
-    const lines = normalize(prior).split('\n');
-    if (!stems.includes(parent)) lines[front.extends.line - 1] = `extends: ${[...stems, parent].join(', ')}`;
-    next = `${lines.join('\n').replace(/\n*$/, '')}\n${edit}\n`;
+    // latin1 maps each byte to one character, so bytes that are not UTF-8 pass through the line edit unchanged.
+    const asBytes = (text) => Buffer.from(text).toString('latin1');
+    const lines = prior.toString('latin1').replaceAll('\r\n', '\n').split('\n');
+    if (!stems.includes(parent)) lines[front.extends.line - 1] = asBytes(`extends: ${[...stems, parent].join(', ')}`);
+    next = Buffer.from(`${lines.join('\n').replace(/\n*$/, '')}\n${asBytes(edit)}\n`, 'latin1');
   } else {
     if (opts.when === null || !oneLine(opts.when)) throw new UsageError('a new file needs --when "<one sentence naming the requests it serves>"');
     next = `---\nextends: ${parent}\nwhen: ${oneLine(opts.when)}\n---\n\n${edit}\n`;
