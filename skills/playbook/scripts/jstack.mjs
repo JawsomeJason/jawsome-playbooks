@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { accessSync, appendFileSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,12 +11,16 @@ const USAGE = BARE
   ? `usage: playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
+       playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
        playbook check [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook doctor [--fix | --json]
        (compute is an alias of show; jstack-cli is a compatibility alias of playbook)`
   : `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+       jstack-cli playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
+       jstack-cli playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
        jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli doctor [--fix | --json]
        (compatibility alias of playbook; compute is an alias of show)`;
@@ -973,6 +977,128 @@ function runLocate(ctx, opts, name, quote) {
   };
 }
 
+const WRITE_LAYERS = { user: 'user', org: 'org.overrides', repo: 'repo.overrides' };
+const WRITE_FLAGS = ['with', 'withFile', 'when', 'fromFile', 'layer'];
+
+const readStdin = () => {
+  try {
+    return readFileSync(0, 'utf8');
+  } catch {
+    return '';
+  }
+};
+const readSource = (source, flag) => {
+  if (source === '-') return readStdin();
+  try {
+    return readFileSync(resolve(source), 'utf8');
+  } catch {
+    throw new UsageError(`${flag}: cannot read ${source}`);
+  }
+};
+const oneLine = (text) => text.trim().replace(/\s*\n\s*/g, ' ');
+
+/** The folder a write in the chosen layer lands in. Never a team folder, which changes only through a pull request. */
+function writeDir(ctx, opts) {
+  const key = opts.layer ?? 'user';
+  const layer = WRITE_LAYERS[key];
+  if (!layer) throw new UsageError(`--layer ${key}: use user, org or repo`);
+  if (!isDir(ctx.configDir)) throw new UsageError(`no config dir at ${ctx.configDir}; run the setup skill first`);
+  const dir = LAYERS[layer].dir(ctx);
+  if (!dir) throw new UsageError(`no ${key} layer for this checkout; run from a checkout of the ${key}, or pass --repo`);
+  const real = realOr(dir);
+  if (/(^|\/)(01-standard|01-team|\.agents)(\/|$)/.test(real) && !real.startsWith(`${realOr(ctx.configDir)}/${DIR.user}`)) {
+    throw new UsageError(`${dir} resolves into a team folder; team changes go through a pull request`);
+  }
+  return { layer, dir };
+}
+
+/** Everything the `layer` sees below itself, so a quote anchors on the text the layer will edit. */
+function below(ctx, layer) {
+  const order = ctx.order.slice(0, ctx.order.indexOf(layer));
+  return { order, playbooks: cascade(readBundled(ctx), collectFiles(ctx).active.filter((f) => order.includes(f.layer)), order) };
+}
+
+/** Writes `next`, then runs check over the whole config. A failure puts the prior bytes back and exits 1. */
+function commitWrite(ctx, path, prior, next) {
+  let made = null;
+  for (let d = dirname(path); !lexists(d); d = dirname(d)) made = d;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, next);
+  const analysis = analyze(ctx, { pstackCheck: true });
+  const report = checkReport(ctx, analysis);
+  if (report.passed) return analysis;
+  if (prior === null) rmSync(made ?? path, { recursive: true, force: true });
+  else writeFileSync(path, prior);
+  const lines = [...report.problems.map(problemLine), ...(report.pstackCheck.status === 'failed' ? report.pstackCheck.lines : [])];
+  throw Object.assign(new UsageError(`refused: check fails with this edit, so nothing was written\n${lines.join('\n')}`), { status: 1 });
+}
+
+function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
+  const verb = ['After', 'Before', 'Replace', 'In'].find((v) => v.toLowerCase() === verbWord.toLowerCase());
+  if (!verb) throw new UsageError(`${verbWord}: use after, before, replace or in`);
+  const quote = rawQuote.trim();
+  if (!quote || quote.includes('"')) throw new UsageError('the quote must be non-empty and hold no double quote');
+  if (!/^[\w][\w.-]*$/.test(fileName) || fileName.endsWith('.md')) throw new UsageError(`${fileName}: give the file name without .md, letters, digits, dots and dashes only`);
+  if ((opts.with === null) === (opts.withFile === null)) throw new UsageError('give exactly one of --with and --with-file');
+  const text = oneLine(opts.with === null ? readSource(opts.withFile, '--with-file') : opts.with === '-' ? readStdin() : opts.with);
+  if (!text) throw new UsageError('the change text is empty');
+  const { layer, dir } = writeDir(ctx, opts);
+  const seen = below(ctx, layer).playbooks.get(parent);
+  if (!seen) throw new UsageError(`no playbook named ${parent} at or below the ${layer} layer`);
+  const found = locate(seen, quote, false);
+  if (!found.step) {
+    const hits = found.steps?.map((n) => `${n}. ${effective(seen.steps[n - 1]).slice(0, 70).trimEnd()}...`);
+    throw Object.assign(new UsageError(`refused: ${FAILURES[found.fail].message(quote, found.steps)}${hits ? `\n${hits.join('\n')}` : ''}`), { status: 1 });
+  }
+  const path = join(dir, `${fileName}.md`);
+  const edit = `- **${verb}** "${quote}" ${text}`;
+  const exists = lexists(path);
+  let next;
+  let prior = null;
+  if (exists) {
+    if (lstatSync(path).isSymbolicLink() || !isFile(path)) throw new UsageError(`${path} is not a plain file`);
+    prior = readFileSync(path, 'utf8');
+    const { front, hasFront } = parseLayerText(prior);
+    if (!hasFront || !front.extends) throw new UsageError(`${path} has no extends: line; add one by hand or pick another file name`);
+    const stems = front.extends.value.split(',').map((x) => x.trim()).filter(Boolean);
+    if (stems.length === 0) throw new UsageError(`${path} defines a standalone playbook; pick another file name`);
+    const lines = normalize(prior).split('\n');
+    if (!stems.includes(parent)) lines[front.extends.line - 1] = `extends: ${[...stems, parent].join(', ')}`;
+    next = `${lines.join('\n').replace(/\n*$/, '')}\n${edit}\n`;
+  } else {
+    if (opts.when === null || !oneLine(opts.when)) throw new UsageError('a new file needs --when "<one sentence naming the requests it serves>"');
+    next = `---\nextends: ${parent}\nwhen: ${oneLine(opts.when)}\n---\n\n${edit}\n`;
+  }
+  const analysis = commitWrite(ctx, path, prior, next);
+  const pb = analysis.playbooks.get(parent);
+  const flat = (t) => t.replace(/\s+/g, ' ');
+  const i = pb.steps.findIndex((s) => flat(effective(s)).includes(flat(text)) && (s.origin === layer || s.touched.includes(layer)));
+  const out = [`${exists ? 'appended to' : 'created'} ${path}`];
+  if (i >= 0) out.push('', `# ${parent} step ${i + 1} (${headerParts(ctx).join(' · ')})`, `${display(pb.steps[i])}   [${[pb.steps[i].origin, ...pb.steps[i].touched].join(' ~ ')}]`);
+  return { out: out.join('\n'), status: 0 };
+}
+
+function runNew(ctx, opts, [name]) {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new UsageError(`${name}: a playbook name is lowercase letters, digits and dashes`);
+  if (opts.fromFile === null) throw new UsageError('give the steps with --from-file <path|->');
+  if (opts.with !== null || opts.withFile !== null) throw new UsageError('--with and --with-file belong to extend');
+  const when = opts.when === null ? '' : oneLine(opts.when);
+  if (!when) throw new UsageError('give --when "<one sentence naming the requests it serves>"');
+  const { layer, dir } = writeDir(ctx, opts);
+  const known = below(ctx, ctx.order[ctx.order.indexOf(layer)]);
+  const upto = ctx.order.slice(0, ctx.order.indexOf(layer) + 1);
+  const exists = cascade(readBundled(ctx), collectFiles(ctx).active.filter((f) => upto.includes(f.layer)), upto).has(name) || known.playbooks.has(name);
+  const path = join(dir, `${name}.md`);
+  if (exists || lexists(path)) throw Object.assign(new UsageError(`refused: ${name} already exists at or below the ${layer} layer`), { status: 1 });
+  const body = normalize(readSource(opts.fromFile, '--from-file')).trim();
+  if (body.split('\n').some((l) => CHANGE_VERB.test(l))) throw Object.assign(new UsageError('refused: a standalone playbook cannot carry edit lines'), { status: 1 });
+  if (body.startsWith('---')) throw new UsageError('give the steps only; new writes the front matter');
+  if (parsePlaybook(body).steps.length === 0) throw Object.assign(new UsageError('refused: the body has no numbered steps (a line "1. " at column 0 starts one)'), { status: 1 });
+  const analysis = commitWrite(ctx, path, null, `---\nextends:\nwhen: ${when}\n---\n\n${body}\n`);
+  const pb = analysis.playbooks.get(name);
+  return { out: `created ${path}\n\n# ${name} (${headerParts(ctx).join(' · ')})\n${pb.steps.map((s, i) => `${i + 1}. ${display(s)}   [${s.origin}]`).join('\n')}`, status: 0 };
+}
+
 function runList(ctx, opts) {
   const { files, playbooks } = analyze(ctx, { pstackCheck: false });
   const rows = [...playbooks.values()]
@@ -1306,15 +1432,24 @@ const COMMANDS = {
   'playbook list': { arity: 0, run: (opts) => runList(loadContext(opts), opts) },
   'playbook show': { arity: 1, run: (opts, [name]) => runCompute(loadContext(opts), opts, name) },
   'playbook locate': { arity: 2, run: (opts, [name, quote]) => runLocate(loadContext(opts), opts, name, quote) },
+  'playbook extend': { arity: 4, writes: true, run: (opts, args) => runExtend(loadContext(opts), opts, args) },
+  'playbook new': { arity: 1, writes: true, run: (opts, args) => runNew(loadContext(opts), opts, args) },
   check: { arity: 0, run: (opts) => runCheck(loadContext(opts), opts) },
   doctor: { arity: 0, run: (opts) => runDoctor(opts) },
 };
 
-const GROUP_VERBS = new Set(['list', 'show', 'compute', 'locate']);
+const WRITE_OPTIONS = {
+  '--with': { key: 'with', dashText: true },
+  '--when': { key: 'when', dashText: true },
+  '--with-file': { key: 'withFile' },
+  '--from-file': { key: 'fromFile' },
+  '--layer': { key: 'layer' },
+};
+const GROUP_VERBS = new Set(['list', 'show', 'compute', 'locate', 'extend', 'new']);
 const VERB_ALIASES = { compute: 'show' };
 
 function parseArgs(argv) {
-  const opts = { json: false, fix: false, help: false, repo: null, pstack: null };
+  const opts = { json: false, fix: false, help: false, repo: null, pstack: null, with: null, withFile: null, when: null, fromFile: null, layer: null };
   const words = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -1325,6 +1460,10 @@ function parseArgs(argv) {
       const value = argv[++i];
       if (!value || value.startsWith('-')) throw new UsageError(`${arg} needs a value`, { usage: true });
       opts[arg.slice(2)] = value;
+    } else if (WRITE_OPTIONS[arg]) {
+      const value = argv[++i];
+      if (value === undefined || (value.startsWith('-') && value !== '-' && !WRITE_OPTIONS[arg].dashText)) throw new UsageError(`${arg} needs a value`, { usage: true });
+      opts[WRITE_OPTIONS[arg].key] = value;
     } else if (arg.startsWith('-')) throw new UsageError(`unknown option ${arg}`, { usage: true });
     else words.push(arg);
   }
@@ -1335,6 +1474,8 @@ function parseArgs(argv) {
   const command = COMMANDS[grouped ? `playbook ${VERB_ALIASES[verb] ?? verb}` : verb];
   const args = rest;
   if (!command || args.length !== command.arity) throw new UsageError('', { usage: true });
+  if (!command.writes && WRITE_FLAGS.some((f) => opts[f] !== null)) throw new UsageError('', { usage: true });
+  if (command.writes && (opts.json || opts.fix)) throw new UsageError('', { usage: true });
   if (command === COMMANDS.doctor ? opts.repo || opts.pstack || (opts.fix && opts.json) : opts.fix) throw new UsageError('', { usage: true });
   return { opts, command, args };
 }
@@ -1352,7 +1493,7 @@ function main(argv) {
   } catch (e) {
     if (!(e instanceof UsageError)) throw e;
     process.stderr.write(`${e.message}\n`);
-    return 2;
+    return e.status ?? 2;
   }
 }
 
