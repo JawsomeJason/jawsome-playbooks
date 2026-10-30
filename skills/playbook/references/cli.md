@@ -6,7 +6,7 @@ playbook show <playbook> [--repo <repo>] [--json] [--pstack <dir-or-version>]
 playbook locate <playbook> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
 playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
 playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
-playbook check [--repo <repo>] [--json] [--pstack <dir-or-version>]
+playbook check [--repo <repo> | --every-repo] [--json] [--pstack <dir-or-version>]
 playbook doctor [--fix | --json]
 playbook --help
 ```
@@ -20,6 +20,7 @@ playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. 
 | Option | Effect |
 | --- | --- |
 | `--repo <repo>` | Sets the repo key. When it differs from the current checkout's key, jstack-cli ignores the checkout and reads team files from `<config>/03-repos/<repo>/01-team/`. |
+| `--every-repo` | `check` only. Checks with no repo and in each repo `config.json` records, and prints one report in the same shape. It never records a version, because it reads several contexts' files. |
 | `--json` | Prints JSON that follows the command's schema in [schemas/](schemas/). |
 | `--layer user\|org\|repo` | `extend` and `new` only. The layer to write in. It defaults to `user`. `org` and `repo` write to that scope's `02-overrides/`, for the org or repo of the current checkout. |
 | `--with <text\|->`, `--with-file <path>` | `extend` only. The change text, from the argument, from stdin when it is `-`, or from a file. Give one. |
@@ -116,7 +117,7 @@ TEXT
 - The file is `<file-name>.md` in the layer's folder. When it is missing, `extend` creates it with `extends: <parent>` and the `--when` sentence, which is then required. When it exists, `extend` appends the edit line and adds the parent to `extends` if it is missing. A file that has no `extends:` line, or an empty one, is refused, because it is a standalone playbook.
 - The verb is `after`, `before`, `replace`, or `in`. The quote holds no double quote. The text may hold backticks and quotes, and line breaks in it fold to spaces.
 - Before writing, the quote must match exactly one step of the parent as the layers below the chosen layer leave it, the same text that [`locate`](#locate) judges. On none or several, `extend` names the problem and the matching steps, writes nothing, and exits 1.
-- After writing, `extend` runs the same validation as `check` in every context that reads the file's folder: for a `user` file, no repo plus every repo in `config.json`'s `repos`, for an `org` file, those repos in that org, and for a `repo` file, that repo. A user file changes the text that an org or repo override quotes, so a write that passes where it runs can still break another repo. A recorded repo is read from its checkout when the checkout exists. If it fails, it puts the prior bytes back, or removes the file it created, prints the problems, and exits 1.
+- After writing, `extend` runs the same validation as `check` in every context that reads the file's folder: for a `user` file, no repo plus every repo in `config.json`'s `repos`, for an `org` file, those repos in that org, and for a `repo` file, that repo. A user file changes the text that an org or repo override quotes, so a write that passes where it runs can still break another repo. A recorded repo is read from its checkout when the checkout exists. If the write added a problem, it puts the prior bytes back, or removes the file it created, prints the new problems, and exits 1. A problem that was already there never refuses a write, so it cannot block an unrelated edit or its own repair. `extend` prints it after the changed step instead.
 - On success it prints the path and the changed step with its layer tags.
 - Writes follow `JSTACK_CONFIG`. `extend` and `new` never write under `.agents/playbooks` or a `01-standard/` or `01-team/` folder, because team changes go through a pull request.
 
