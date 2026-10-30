@@ -36,7 +36,7 @@ Each org standard file exists once, and each repo's `01-team/` folder links to i
 
 - `orgs` maps an org name to the forge owners whose repos belong to it. A repo whose owner is in no list gets no org layers.
 - `pstack` is the version that the layers last passed `check` against. jstack-cli records it and never pins it.
-- `repos` maps a repo key to its main checkout. The `setup` skill records it when it links the repo, and `jstack-cli doctor` reads it to check the repo's link from any directory. The cascade does not read it.
+- `repos` maps a repo key to its main checkout. The `setup` skill records it when it links the repo, and `playbook doctor` reads it to check the repo's link from any directory. The cascade does not read it.
 - `telemetry` is `true` to log each playbook `compute` reads, as the [jstack-cli reference](cli.md#compute) describes. It is off when missing, because a log of what the operator works on is theirs to turn on.
 - `handle` and `modeTrigger` are the `setup` skill's answers. They stay in the file so that a rerun of `setup` offers them as defaults.
 

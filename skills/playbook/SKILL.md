@@ -1,27 +1,27 @@
 ---
 name: playbook
-description: Lists, computes, and checks layered poteto-mode playbooks with jstack-cli. compute prints one playbook with the personal, org, and repo layers applied over pstack's bundled steps in cascade order, tags each step with the layer that wrote it, and names every override. locate names the step a quote finds and the file each layer would hold an edit in. check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `jstack-cli playbook compute`, when writing or editing a layer file, or after a pstack upgrade.
-argument-hint: "<list|compute|locate|check|doctor> [playbook] [--repo <repo>]"
+description: Lists, computes, and checks layered poteto-mode playbooks with the playbook command (jstack-cli is its compatibility alias). show, also spelled compute, prints one playbook with the personal, org, and repo layers applied over pstack's bundled steps in cascade order, tags each step with the layer that wrote it, and names every override. locate names the step a quote finds and the file each layer would hold an edit in. check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `playbook show`, when writing or editing a layer file, or after a pstack upgrade.
+argument-hint: "<list|show|compute|locate|check|doctor> [playbook] [--repo <repo>]"
 compatibility: Requires Node and the pstack plugin's poteto-mode skill.
 license: MIT
 ---
 
 # Playbook
 
-jstack layers the operator's personal and team playbooks over pstack's bundled poteto-mode playbooks, in a fixed order where later layers win. This skill runs jstack-cli and shows the result, so the agent copies one computed step list instead of merging layers by hand, which drops or misplaces edits.
+jstack layers the operator's personal and team playbooks over pstack's bundled poteto-mode playbooks, in a fixed order where later layers win. This skill runs playbook and shows the result, so the agent copies one computed step list instead of merging layers by hand, which drops or misplaces edits.
 
 ## Run it
 
-1. When `jstack-cli` is on `PATH`, use it. Otherwise run `node scripts/jstack.mjs` from this skill's folder. Both run the same script, and the `PATH` copy is how the operator runs it in a terminal.
+1. When `playbook` is on `PATH`, use it. `jstack-cli` is a compatibility alias that takes the same commands, and `compute` is an alias of `show`. Otherwise run `node scripts/jstack.mjs` from this skill's folder. Both run the same script, and the `PATH` copy is how the operator runs it in a terminal.
 2. Map the argument to a command:
 
    | Argument | Command |
    | --- | --- |
-   | `list` | `jstack-cli playbook list` |
-   | `compute <playbook>` | `jstack-cli playbook compute <playbook>` |
-   | `locate <playbook> <quote>` | `jstack-cli playbook locate <playbook> "<quote>"` |
-   | `check` | `jstack-cli check` |
-   | `doctor` | `jstack-cli doctor` |
+   | `list` | `playbook list` |
+   | `show <playbook>` (alias `compute`) | `playbook show <playbook>` |
+   | `locate <playbook> <quote>` | `playbook locate <playbook> "<quote>"` |
+   | `check` | `playbook check` |
+   | `doctor` | `playbook doctor` |
 
 3. When the argument includes `--repo <repo>`, pass it through. Without it, jstack-cli reads the repo from the current directory's checkout.
 4. Print the output as it is. The operator reads the tags, the struck text, and the override list to see which layer changed a step, so rewording them hides that.
@@ -30,8 +30,8 @@ Exit code 1 means a validator problem. Report each problem line to the operator.
 
 ## Run a computed playbook
 
-- Copy `compute`'s numbered steps into the todolist once, as poteto-mode's copy-and-apply step. Recomputing mid-task can change the list under the work.
-- When the run reaches a playbook listed under `Hands off to:`, compute that playbook with jstack-cli and run its computed steps. Its own layers change its steps, so the bundled text alone would drop them.
+- Copy `show`'s numbered steps into the todolist once, as poteto-mode's copy-and-apply step. Recomputing mid-task can change the list under the work.
+- When the run reaches a playbook listed under `Hands off to:`, show that playbook with playbook and run its computed steps. Its own layers change its steps, so the bundled text alone would drop them.
 - Name every line under `Overrides:` in the reply. An override changes the bundled behavior the operator expects, so it must be visible.
 - When `pstack check-playbooks:` shows lines other than `ok`, report them as poteto-mode asks.
 
@@ -40,7 +40,7 @@ Exit code 1 means a validator problem. Report each problem line to the operator.
 - Put the file in its layer's folder and keep pstack's grammar: `extends`, `when`, and edit lines `- **After|Before|Replace|In** "quote" change`. pstack's own checker reads team files, so a new verb or key there breaks pstack. [references/layers.md](references/layers.md) gives the layout and the cascade rules.
 - Quote a short, distinctive phrase from one step, such as its bold title. pstack rewrites step text between releases, and a long quote breaks on the first rewrite.
 - In team files, quote only pstack's text, and add `layer:` and `source:`. pstack's checker sees team files without the other layers, so a quote from a lower layer fails there.
-- Run `jstack-cli check` after every edit and after every pstack upgrade. It catches a quote that matches nothing, matches two steps, or sits outside the steps, before an agent runs the playbook.
+- Run `playbook check` after every edit and after every pstack upgrade. It catches a quote that matches nothing, matches two steps, or sits outside the steps, before an agent runs the playbook.
 
 ## Keep the JSON shape
 

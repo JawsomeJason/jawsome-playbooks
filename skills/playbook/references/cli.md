@@ -1,15 +1,15 @@
-# jstack-cli reference
+# playbook reference
 
 ```sh
-jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
-jstack-cli playbook compute <playbook> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-jstack-cli playbook locate <playbook> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-jstack-cli check [--repo <repo>] [--json] [--pstack <dir-or-version>]
-jstack-cli doctor [--fix | --json]
-jstack-cli --help
+playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
+playbook show <playbook> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+playbook locate <playbook> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
+playbook check [--repo <repo>] [--json] [--pstack <dir-or-version>]
+playbook doctor [--fix | --json]
+playbook --help
 ```
 
-jstack-cli is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/jstack-cli` imports the script, so one symlink puts the command on `PATH`. The command is `jstack-cli`, not `jstack`, because Java development kits install a `jstack` of their own that can shadow it on `PATH`.
+playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/playbook` and `bin/jstack-cli` import the script, so one symlink each puts the commands on `PATH`. `show` is the main name of the command that prints a playbook, and `compute` stays as an alias of it. `jstack-cli` is a compatibility alias of `playbook`: it takes the same flags, and spells the playbook commands `jstack-cli playbook list|show|compute|locate`, with `jstack-cli check` and `jstack-cli doctor` unchanged. The command is `playbook`, not `jstack`, because Java development kits install a `jstack` of their own that can shadow it on `PATH`.
 
 `--help` and `-h` print the usage and exit 0. Any other word in place of a command, such as `help`, prints the usage and exits 2.
 
@@ -132,11 +132,11 @@ A handoff to a playbook that this repo's layers lack, but that some layer folder
 | --- | --- |
 | pstack-claude | jstack-cli finds a pstack, by the search order under [Environment](#environment). The line names the version and folder. |
 | jstack plugin | `claude plugin list --json` lists a `jstack@` plugin. Without `claude` on `PATH`, an `installed_plugins.json` in a dot-folder of the home directory lists one. |
-| jstack-cli | `jstack-cli` on `PATH` resolves to a jstack `bin/jstack-cli`. A `jstack` on `PATH` that is not jstack's, such as Java's, prints a `-` line. |
+| cli | Both `jstack-cli` and `playbook` on `PATH` resolve to a jstack `bin/` script. Each is one line, and a missing `playbook` link fails until the `setup` skill or the printed `ln -s` command adds it. A `jstack` on `PATH` that is not jstack's, such as Java's, prints a `-` line. |
 | config | The config dir exists, and `config.json` parses and has a `handle`. |
 | mode skill | `<config>/mode/<handle>-mode/SKILL.md` exists, and a `skills` folder in a dot-folder of the home directory links to it. |
 | each repo | For each folder in `<config>/03-repos/`, the checkout's `.agents/playbooks` resolves to `<config>/03-repos/<repo>/01-team/`, and the checkout's `info/exclude` has `/.agents/playbooks`. |
-| check | `jstack-cli check --repo <repo>` passes for each repo, or `jstack-cli check` passes when the config has no repos. |
+| check | `playbook check --repo <repo>` passes for each repo, or `playbook check` passes when the config has no repos. |
 
 doctor finds a repo's checkout at `repos.<repo>.checkout` in `config.json`, which the `setup` skill records. Without that key, it uses the current directory's checkout when its key matches. A repo with neither gets a `-` line, and doctor skips its link check.
 

@@ -7,7 +7,7 @@ node --test 'tests/*.test.mjs'
 claude plugin validate .
 ```
 
-The tests in `tests/jstack.test.mjs` run jstack-cli against a fake pstack in `tests/fixtures/pstack/` and a config dir in `tests/fixtures/config/`. That config dir has files in all five layers and uses all four edit verbs.
+The tests in `tests/jstack.test.mjs` run playbook against a fake pstack in `tests/fixtures/pstack/` and a config dir in `tests/fixtures/config/`. That config dir has files in all five layers and uses all four edit verbs.
 
 `tests/readme-harnesses.test.mjs` reads pstack-claude's README from `PSTACK_CLAUDE_README`, or from the pstack-claude marketplace clone under `$HOME/.*/plugins/marketplaces/`. Without either, the test skips and says why. CI clones pstack-claude, so the test always runs there.
 
@@ -19,12 +19,12 @@ Commit a test that fails for the reason you expect, then the change that turns i
 
 ## Use the Node standard library only
 
-jstack-cli and the tests import nothing outside Node, so they run wherever Node runs, with no install step. `package.json` exists only because Pi reads its `pi` field.
+playbook and the tests import nothing outside Node, so they run wherever Node runs, with no install step. `package.json` exists only because Pi reads its `pi` field.
 
 ## Stay compatible with pstack
 
 - Use pstack's playbook format and edit grammar, and add no verbs. Team files live in a repo's `.agents/playbooks/`, where pstack reads them as project playbooks and its `check-playbooks.mjs` checks them. A verb that pstack lacks would break them there.
-- Never pin a pstack version. jstack-cli reads whichever pstack the harness installed, and `jstack-cli check` names each quote that an upgrade broke. A pin would hold users on an old pstack.
+- Never pin a pstack version. playbook reads whichever pstack the harness installed, and `playbook check` names each quote that an upgrade broke. A pin would hold users on an old pstack.
 
 ## Cover every harness pstack-claude supports
 

@@ -12,7 +12,7 @@ test('reading an installed pstack playbook is blocked with the compute command t
   for (const [tool, input] of [['Read', { file_path: BUNDLED }], ['Bash', { command: `sed -n 1,40p ${BUNDLED}` }]]) {
     const r = hook(tool, input);
     assert.equal(r.status, 2, tool);
-    assert.match(r.stderr, /run `jstack-cli playbook compute feature`/);
+    assert.match(r.stderr, /run `playbook show feature`/);
   }
 });
 
@@ -22,6 +22,7 @@ test('layer files, pstack checkouts, listings and jstack itself pass', () => {
     ['Read', { file_path: '/home/sam/code/pstack/skills/poteto-mode/playbooks/feature.md' }],
     ['Bash', { command: 'ls /home/sam/.claude/plugins/cache/pstack-claude/pstack/1.0.0/skills/poteto-mode/playbooks/' }],
     ['Bash', { command: `JSTACK_PSTACK_DIR=x jstack-cli check # ${BUNDLED}` }],
+    ['Bash', { command: `playbook show feature # ${BUNDLED}` }],
     ['Edit', { file_path: BUNDLED }],
   ]) {
     assert.equal(hook(tool, input).status, 0, JSON.stringify(input));
