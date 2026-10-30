@@ -817,7 +817,9 @@ const headerParts = (ctx) => [ctx.repo.name, ctx.repo.owner ?? ctx.repo.org, `ps
 
 function renderCompute(r) {
   const sections = [`# ${r.playbook} (${r.header.join(' · ')})`];
-  sections.push(
+  if (r.withheld) {
+    sections.push(`No steps: a layer file that edits ${r.playbook} has problems, so some of its edits would be lost. Fix the files below, then run \`jstack-cli playbook check\` until it passes.`);
+  } else sections.push(
     r.steps
       .map((s, i) => {
         const [first, ...rest] = s.display.split('\n');
@@ -851,8 +853,11 @@ function runCompute(ctx, opts, name) {
     record(ctx);
   }
   const touching = analysis.files.active.filter((f) => touches(f, name));
-  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems(touching)];
-  const result = { playbook: name, ...computed(pb, ctx.order, analysis.index), problems, pstackCheck: analysis.pstackCheck };
+  const fileFound = fileProblems(touching);
+  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileFound];
+  const withheld = fileFound.length > 0;
+  const empty = { steps: [], notes: [], overrides: [], handoffs: [] };
+  const result = { playbook: name, ...(withheld ? empty : computed(pb, ctx.order, analysis.index)), problems, pstackCheck: analysis.pstackCheck, withheld };
   const status = problems.length || analysis.pstackCheck.status === 'failed' ? 1 : 0;
   if (!opts.json) return { out: renderCompute({ ...result, header: headerParts(ctx) }), status };
   const { repo } = ctx;

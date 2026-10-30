@@ -194,26 +194,12 @@ when: handing work between web playbooks
   },
 };
 
-test('compute lists each playbook the steps hand off to, with its steps', () => {
+test('compute withholds a playbook whose layer file hands off to a playbook nothing defines', () => {
   const w = world(HANDOFFS);
   const r = w.run(['playbook', 'compute', 'handoffs']);
   assert.equal(r.stdout, `# handoffs (web · acme-eng · pstack 1.0.0)
 
-1. Run **Opening a PR** once the diff is clean.   [user]
-2. Write it per **Comments**, then hand it to Shiping.   [user]
-3. Route that request to **Babysat**, or per \`playbooks/triage.md\`.   [user]
-4. Then run web-releas and opening-a-pr.   [user]
-5. Hand the frontier to Babysit once green.   [user]
-6. Run read-only checks per PR.   [user]
-
-Hands off to:
-- opening-a-pr (steps 1 and 4)
-- triage (step 3)
-- babysit (step 5, notes)
-- web-release (notes)
-
-Notes:
-- Then run web-release, or hand it to **Babysit**.   [repo.overrides]
+No steps: a layer file that edits handoffs has problems, so some of its edits would be lost. Fix the files below, then run \`jstack-cli playbook check\` until it passes.
 
 Problems:
 ${w.config}/01-user/handoffs.md:6: hands off to Shiping, which no layer or pstack defines
@@ -224,12 +210,6 @@ pstack check-playbooks:
 ok
 `);
   assert.equal(r.status, 1);
-  assert.deepEqual(JSON.parse(w.run(['playbook', 'compute', 'handoffs', '--json']).stdout).handoffs, [
-    { playbook: 'opening-a-pr', steps: [1, 4], inNotes: false },
-    { playbook: 'triage', steps: [3], inNotes: false },
-    { playbook: 'babysit', steps: [5], inNotes: true },
-    { playbook: 'web-release', steps: [], inNotes: true },
-  ]);
 });
 
 test('check flags a layer handoff nothing defines, and leaves section names and pstack text alone', () => {
@@ -416,15 +396,20 @@ test('check names the rename for each unnumbered layer folder', () => {
   assert.equal(r.status, 1);
 });
 
-test('compute still prints the cascade when its files have problems, and exits 1', () => {
+test('compute withholds the steps when a file touching the playbook has problems, and exits 1', () => {
   const w = world(BROKEN);
   const r = w.run(['playbook', 'compute', 'babysit']);
   assert.match(r.stdout, /^# babysit \(web · acme-eng · pstack 1\.0\.0\)$/m);
+  assert.match(r.stdout, /^No steps: .*`jstack-cli playbook check`/m);
+  assert.doesNotMatch(r.stdout, /^1\. /m);
   assert.match(r.stdout, /^Problems:$/m);
   assert.ok(r.stdout.includes(`${w.config}/01-user/broken.md:5: quote matches steps 1 and 2; make it longer`), r.stdout);
   assert.ok(r.stdout.includes(`${w.config}/01-user/gone.md:1: broken link -> ../nowhere.md`), r.stdout);
   assert.ok(!r.stdout.includes('solo.md'), 'problems in files that target other playbooks stay out');
   assert.equal(r.status, 1);
+  const j = JSON.parse(w.run(['playbook', 'compute', 'babysit', '--json']).stdout);
+  assert.deepEqual([j.steps, j.notes, j.overrides, j.handoffs], [[], [], [], []]);
+  assert.ok(j.problems.length > 0);
 });
 
 test('a dangling link in .agents/playbooks is reported, not a crash, and skips pstack\'s checker', () => {
