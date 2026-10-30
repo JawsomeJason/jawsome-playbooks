@@ -259,28 +259,54 @@ when: linking playbooks
   },
 };
 
-test('check flags a near-miss link and a step the playbook lacks, and leaves correct prose alone', () => {
+test('check reports a near-miss link as info, fails a step the playbook lacks, and leaves correct prose alone', () => {
   const w = world(LINKS);
   const r = w.run(['check']);
   const links = `${w.config}/01-user/links.md`;
+  const nearMiss = (line, phrase, stem) => `info: ${links}:${line}: "${phrase}" may name ${stem} but does not register as a handoff; if it is one, write playbooks/${stem}.md`;
   assert.deepEqual(lines(r.stdout), [
     OK_LINE,
-    `${links}:5: "Run babysit" names babysit but does not register as a handoff; write playbooks/babysit.md`,
-    `${links}:6: "runs reviewing-code" names reviewing-code but does not register as a handoff; write playbooks/reviewing-code.md`,
     `${links}:9: watching-review-asks step 4, but watching-review-asks has 3 steps`,
     `${links}:10: babysit step 9, but babysit has 6 steps`,
-    `${links}:11: "Run babysit" names babysit but does not register as a handoff; write playbooks/babysit.md`,
+    nearMiss(5, 'Run babysit', 'babysit'),
+    nearMiss(6, 'runs reviewing-code', 'reviewing-code'),
+    nearMiss(11, 'Run babysit', 'babysit'),
     'proposed: .agents/playbooks/babysit.md:5',
-    'check failed: 5 problems against pstack 1.0.0',
+    'check failed: 2 problems against pstack 1.0.0',
   ]);
   assert.equal(r.status, 1);
 });
 
-test('compute withholds a playbook whose layer file has a near-miss link', () => {
-  const w = world(LINKS);
-  const r = w.run(['playbook', 'compute', 'links']);
-  assert.match(r.stdout, /^No steps: /m);
-  assert.equal(r.status, 1);
+test('prose that happens to follow a run-like word with a playbook name never fails check or withholds', () => {
+  const w = world({
+    files: {
+      '01-user/prose.md': `---
+when: writing prose
+---
+
+1. Open one PR per feature.
+2. Run feature flags first.
+3. Ran babysit checks.
+4. After running feature builds, stop.
+5. Per feature flag.
+`,
+    },
+  });
+  assert.equal(w.run(['check']).status, 0);
+  const show = w.run(['playbook', 'show', 'prose']);
+  assert.equal(show.status, 0);
+  assert.match(show.stdout, /^1\. Open one PR per feature\./m);
+});
+
+test('a step reference needs a whole playbook name, and reads a path and a range', () => {
+  const body = (line) => ({ files: { '01-user/refs.md': `---\nwhen: refs\n---\n\n1. ${line}\n` } });
+  assert.equal(world(body('Do the pre-babysit step 99.')).run(['check']).status, 0);
+  assert.equal(world(body('See babysit steps 2-5.')).run(['check']).status, 0);
+  for (const line of ['See playbooks/babysit.md step 99.', 'See babysit steps 2-99.', 'See `babysit` steps 2 to 99.']) {
+    const r = world(body(line)).run(['check']);
+    assert.equal(r.status, 1, line);
+    assert.match(r.stdout, /babysit step 99, but babysit has 6 steps/, line);
+  }
 });
 
 test('a handoff to a playbook only another org defines is info, not a problem', () => {
