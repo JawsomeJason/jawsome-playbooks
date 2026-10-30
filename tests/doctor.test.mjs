@@ -116,6 +116,17 @@ doctor failed: 5 problems
   assert.equal(w.calls(), 'plugin list --json\nplugin marketplace list --json\n');
 });
 
+test('a missing playbook link only informs while jstack-cli works, and --fix still offers it', () => {
+  const w = doctorWorld();
+  unlinkSync(join(w.bin, 'playbook'));
+  const r = w.doctor();
+  assert.equal(r.status, 0, r.stdout);
+  assert.ok(r.stdout.includes(`- playbook is not on PATH\n    mkdir -p ${w.home}/.local/bin\n    ln -s ${realpathSync(PLAYBOOK)} ${w.home}/.local/bin/playbook\n`), r.stdout);
+  assert.match(r.stdout, /doctor passed\n$/);
+  assert.deepEqual(JSON.parse(w.doctor(['--json']).stdout).findings.filter((f) => f.id === 'cli').map((f) => f.status), ['ok', 'info']);
+  assert.match(w.doctor(['--fix']).stdout, /fixes not run: no terminal to ask on/);
+});
+
 test('doctor --json carries each finding with its status and fixes', () => {
   const w = brokenWorld({ marketplaces: [JSTACK_MARKET] });
   const r = w.doctor(['--json']);

@@ -166,13 +166,13 @@ A handoff to a playbook that this repo's layers lack, but that some layer folder
 
 ## doctor
 
-`doctor` checks the whole install and prints one line per check: `✓` for a pass, `✗` for a failure, and `-` for information. Under each `✗` it prints the commands that fix it. The checks run in this order:
+`doctor` checks the whole install and prints one line per check: `✓` for a pass, `✗` for a failure, and `-` for information. Under a `✗` or `-` line it prints the commands that fix it, and only `✗` fails doctor. The checks run in this order:
 
 | Check | Passes when |
 | --- | --- |
 | pstack-claude | jstack-cli finds a pstack, by the search order under [Environment](#environment). The line names the version and folder. |
 | jstack plugin | `claude plugin list --json` lists a `jstack@` plugin. Without `claude` on `PATH`, an `installed_plugins.json` in a dot-folder of the home directory lists one. |
-| cli | Both `jstack-cli` and `playbook` on `PATH` resolve to a jstack `bin/` script. Each is one line, and a missing `playbook` link fails until the `setup` skill or the printed `ln -s` command adds it. A `jstack` on `PATH` that is not jstack's, such as Java's, prints a `-` line. |
+| cli | Both `jstack-cli` and `playbook` on `PATH` resolve to a jstack `bin/` script. Each is one line. A missing `jstack-cli` link fails. A missing `playbook` link prints a `-` line with its `ln -s` command when `jstack-cli` passes, because `jstack-cli` takes every command, and fails otherwise. A `jstack` on `PATH` that is not jstack's, such as Java's, prints a `-` line. |
 | config | The config dir exists, and `config.json` parses and has a `handle`. |
 | mode skill | `<config>/mode/<handle>-mode/SKILL.md` exists, and a `skills` folder in a dot-folder of the home directory links to it. |
 | each repo | For each folder in `<config>/03-repos/`, the checkout's `.agents/playbooks` resolves to `<config>/03-repos/<repo>/01-team/`, and the checkout's `info/exclude` has `/.agents/playbooks`. |
@@ -189,6 +189,6 @@ The fixes depend on the harness:
 - A missing link gets an `ln -s` command, and a missing exclude line gets an `echo ... >>` command.
 - A fix that would replace a file prints as advice, such as `move <path> aside, then: ln -s ...`, because the file in the way may be the operator's own work.
 
-`--fix` prints the report, then asks `run these? [y/N]` for each failing check that has a command to run, and runs that check's commands on `y`. It runs only `claude plugin` commands, `mkdir -p`, `ln -s` to a path that does not exist, and an append to `info/exclude`. A fix never copies files into a plugin cache, because a harness loads only the version its install record names. When stdin is not a terminal, `--fix` prints `fixes not run: no terminal to ask on` and runs nothing. After the fixes, doctor runs every check again and prints the new report under `after fixes:`.
+`--fix` prints the report, then asks `run these? [y/N]` for each `✗` or `-` line that has a command to run, and runs that check's commands on `y`. It runs only `claude plugin` commands, `mkdir -p`, `ln -s` to a path that does not exist, and an append to `info/exclude`. A fix never copies files into a plugin cache, because a harness loads only the version its install record names. When stdin is not a terminal, `--fix` prints `fixes not run: no terminal to ask on` and runs nothing. After the fixes, doctor runs every check again and prints the new report under `after fixes:`.
 
 `--json` prints the findings, shaped by [schemas/jstack.doctor.schema.json](schemas/jstack.doctor.schema.json).

@@ -6,7 +6,7 @@ Hand these rules to pstack's automate-me skill as fixed requirements for the `<h
 2. It performs poteto-mode's copy-and-apply step with `playbook show <playbook>`, and copies the output into the todolist once. The computed list already holds the bundled steps and every layer's edits, so applying the project playbooks again would double them.
 3. It names every line under `Overrides:` in its reply, giving the layer and the step that layer changed. An override changes behavior the operator expects from pstack, so the reply must always name it.
 4. When the run reaches a playbook listed under `Hands off to:`, it computes that playbook with `playbook show` too, and runs the computed steps. The callee's own layers change its steps, so running the bundled text would drop them.
-5. When `playbook` is not on `PATH`, it follows poteto-mode as written. The mode skill must still work on a machine without jstack.
+5. It runs `playbook` or `jstack-cli`, whichever is on `PATH`, spelling the second as `jstack-cli playbook show`. When neither is on `PATH`, it follows poteto-mode as written. A machine can have only the compatibility alias, whose output is the same, and the mode skill must still work on a machine without jstack.
 
 ## Trigger
 
