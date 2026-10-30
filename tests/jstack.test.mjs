@@ -800,3 +800,29 @@ test('a config dir that still has layers.json names the rename', () => {
   assert.equal(r.status, 2);
   assert.equal(r.stderr, `${w.config}/layers.json: rename it to config.json\n`);
 });
+
+test('an unresolved extends fails show for every playbook, and says the steps may lack its edits', () => {
+  const w = world({ files: { '01-user/typo.md': '---\nextends: babysitt\nwhen: A typo\n---\n\n- **In** "Declare the mode" Be brief.\n' } });
+  for (const name of ['babysit', 'feature']) {
+    const r = w.run(['playbook', 'show', name]);
+    assert.equal(r.status, 1, name);
+    assert.match(r.stdout, /^1\. /m, `${name} still prints its steps`);
+    assert.match(r.stdout, /a layer file has an extends that names no playbook, so it edits nothing.*may belong in these steps/);
+    assert.match(r.stdout, /typo\.md:2: extends babysitt, which pstack 1\.0\.0 has no playbook for/);
+    assert.doesNotMatch(r.stdout, /Be brief/);
+  }
+  const json = JSON.parse(w.run(['playbook', 'show', 'feature', '--json']).stdout);
+  assert.ok(json.steps.length > 0);
+  assert.match(json.problems[0].message, /extends babysitt/);
+});
+
+test('a file that partly resolves withholds what it touches, and only warns on the rest', () => {
+  const w = world({ files: { '01-user/half.md': '---\nextends: babysit, babysitt\nwhen: Half\n---\n\n- **In** "Declare the mode" Be brief.\n' } });
+  const touched = w.run(['playbook', 'show', 'babysit']);
+  assert.equal(touched.status, 1);
+  assert.match(touched.stdout, /^No steps: /m);
+  const other = w.run(['playbook', 'show', 'feature']);
+  assert.equal(other.status, 1);
+  assert.match(other.stdout, /^1\. /m);
+  assert.match(other.stdout, /half\.md:2: extends babysitt/);
+});

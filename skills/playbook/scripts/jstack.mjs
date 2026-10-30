@@ -271,6 +271,7 @@ function cascade(bundled, files, order) {
           ? `extends ${stem}, which the ${above.layer} layer defines, and a layer extends only playbooks below it`
           : `extends ${stem}, which pstack ${file.pstackName} has no playbook for`;
         file.problems.push({ line: file.extendsLine, message });
+        file.unresolved = true;
       }
       if (!file.team && known.has(file.stem) && !file.extends.includes(file.stem)) {
         file.info.push({ line: file.extendsLine, message: `targets ${file.stem} by its file name; add \`extends: ${[...file.extends, file.stem].join(', ')}\` to say so` });
@@ -876,14 +877,17 @@ function renderCompute(r) {
   const sections = [`# ${r.playbook} (${r.header.join(' · ')})`];
   if (r.withheld) {
     sections.push(`No steps: a layer file that edits ${r.playbook} has problems, so some of its edits would be lost. Fix the files below, then run \`playbook check\` until it passes.`);
-  } else sections.push(
-    r.steps
-      .map((s, i) => {
-        const [first, ...rest] = s.display.split('\n');
-        return [`${i + 1}. ${first}   [${[s.origin, ...s.touched].join(' ~ ')}]`, ...rest].join('\n');
-      })
-      .join('\n'),
-  );
+  } else {
+    if (r.partial) sections.push('These steps may be incomplete: a layer file has an extends that names no playbook, so it edits nothing, and its edits may belong in these steps. It is listed under Problems.');
+    sections.push(
+      r.steps
+        .map((s, i) => {
+          const [first, ...rest] = s.display.split('\n');
+          return [`${i + 1}. ${first}   [${[s.origin, ...s.touched].join(' ~ ')}]`, ...rest].join('\n');
+        })
+        .join('\n'),
+    );
+  }
   if (r.handoffs.length) {
     const where = (h) => [...(h.steps.length ? [`${h.steps.length > 1 ? 'steps' : 'step'} ${andList(h.steps)}`] : []), ...(h.inNotes ? ['notes'] : [])].join(', ');
     sections.push(['Hands off to:', ...r.handoffs.map((h) => `- ${h.playbook} (${where(h)})`)].join('\n'));
@@ -911,12 +915,14 @@ function runCompute(ctx, opts, name) {
   }
   const touching = analysis.files.active.filter((f) => touches(f, name));
   const fileFound = fileProblems(touching);
-  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileFound];
+  // Its edits reach no playbook, and any playbook may be the one it meant, so every show reports it.
+  const unresolved = analysis.files.active.filter((f) => f.unresolved && !touching.includes(f));
+  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileFound, ...fileProblems(unresolved)];
   const withheld = fileFound.length > 0;
   const empty = { steps: [], notes: [], overrides: [], handoffs: [] };
   const result = { playbook: name, ...(withheld ? empty : computed(pb, ctx.order, analysis.index)), problems, pstackCheck: analysis.pstackCheck, withheld };
   const status = problems.length || analysis.pstackCheck.status === 'failed' ? 1 : 0;
-  if (!opts.json) return { out: renderCompute({ ...result, header: headerParts(ctx) }), status };
+  if (!opts.json) return { out: renderCompute({ ...result, partial: unresolved.length > 0, header: headerParts(ctx) }), status };
   const { repo } = ctx;
   return {
     out: {

@@ -73,9 +73,11 @@ These sections follow the steps, each only when it has entries, in this order:
 - `Hands off to:` lists each other playbook that the steps or notes send the work to. Each line gives the playbook stem and where it appears, such as `- opening-a-pr (step 8)` or `- shipping (notes)`.
 - `Notes:` lists each note with its layer.
 - `Overrides:` lists each override, such as `- step 6: user replaced "Never merge" (pstack)`.
-- `Problems:` lists each problem in `config.json`, in a symlink, or in a layer file that touches this playbook.
+- `Problems:` lists each problem in `config.json`, in a symlink, in a layer file that touches this playbook, or in a layer file with an `extends` that names no playbook.
 
 When a layer file that touches this playbook has a problem, `compute` withholds the playbook: it prints no steps, only a line that says so and points to `playbook check`, then `Problems:` and the pstack result, and exits 1. With `--json`, `steps`, `notes`, `overrides`, and `handoffs` are empty. A problem in `config.json` or a symlink alone, or a pstack checker failure alone, still prints the steps and exits 1.
+
+A layer file with an `extends` stem that names no playbook edits nothing, and any playbook may be the one it meant. So `compute` of every playbook lists that file's problems and exits 1. It still prints the steps of a playbook the file does not touch, under a line that says they may be incomplete. With `--json`, the steps stay and `problems` carries the file's problems.
 
 `pstack check-playbooks:` comes last, with pstack's own checker result, or `ok`. `--json` prints the same data, shaped by [schemas/jstack.compute.schema.json](schemas/jstack.compute.schema.json).
 
