@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { world } from './helpers.mjs';
 
-const schema = (name) => JSON.parse(readFileSync(new URL(`../skills/playbook/references/schemas/jstack.${name}.schema.json`, import.meta.url), 'utf8'));
+const schema = (name) => JSON.parse(readFileSync(new URL(`../skills/playbook/references/schemas/playbook.${name}.schema.json`, import.meta.url), 'utf8'));
 
 /** The JSON Schema keywords the schemas use, enough to fail on a key, a type or a value the schema does not allow. */
 function errors(value, node, root, path = '$') {

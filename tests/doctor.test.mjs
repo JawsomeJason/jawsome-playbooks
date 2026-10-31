@@ -154,7 +154,7 @@ test('doctor --json carries each finding with its status and fixes', () => {
 
 test('without claude on PATH, doctor reads install records and prints every harness row from the README', () => {
   const w = brokenWorld({ claude: false });
-  const r = w.doctor([], { env: { JSTACK_PSTACK_DIR: '' } });
+  const r = w.doctor([], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   const out = r.stdout.split('\n');
   const at = (line) => out.indexOf(line);
   assert.ok(at('✗ pstack-claude not found') >= 0, r.stdout);
@@ -255,7 +255,7 @@ test('doctor --fix asks per fix on the terminal and runs only the ones answered 
     cwd: w.outside,
     input: 'y\nn\nn\ny\n',
     encoding: 'utf8',
-    env: { ...process.env, HOME: w.home, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK, ...w.env },
+    env: { ...process.env, HOME: w.home, PLAYBOOKS_CONFIG: w.config, PLAYBOOKS_PSTACK_DIR: PSTACK, ...w.env },
   });
   assert.equal(
     w.calls(),

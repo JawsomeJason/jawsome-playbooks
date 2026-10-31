@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, symlinkSync } from 'node:fs';
+import { readFileSync, renameSync, symlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { PSTACK, world } from './helpers.mjs';
+import { PSTACK, withoutNulls, world } from './helpers.mjs';
 
 const HOOK = fileURLToPath(new URL('../hooks/playbook-reads.mjs', import.meta.url));
 const BUNDLED = '/home/sam/.claude/plugins/cache/pstack-claude/pstack/1.0.0/skills/poteto-mode/playbooks/feature.md';
@@ -23,7 +23,7 @@ test('layer files, pstack checkouts, listings and jstack itself pass', () => {
     ['Read', { file_path: '/home/sam/.jstack/playbooks/feature-sam.md' }],
     ['Read', { file_path: '/home/sam/code/pstack/skills/poteto-mode/playbooks/feature.md' }],
     ['Bash', { command: 'ls /home/sam/.claude/plugins/cache/pstack-claude/pstack/1.0.0/skills/poteto-mode/playbooks/' }],
-    ['Bash', { command: `JSTACK_PSTACK_DIR=x jstack-cli check # ${BUNDLED}` }],
+    ['Bash', { command: `PLAYBOOKS_PSTACK_DIR=x jstack-cli check # ${BUNDLED}` }],
     ['Bash', { command: `playbook show feature # ${BUNDLED}` }],
     ['Edit', { file_path: BUNDLED }],
   ]) {
@@ -44,7 +44,7 @@ const editHook = (w, file, env = {}) =>
     cwd: w.repo,
     input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: file } }),
     encoding: 'utf8',
-    env: { ...process.env, HOME: w.home, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK, ...env },
+    env: withoutNulls({ ...process.env, HOME: w.home, PLAYBOOKS_CONFIG: w.config, PLAYBOOKS_PSTACK_DIR: PSTACK, ...env }),
   });
 
 test('edit hook blocks an Edit of a user playbook file in any scope, through a symlink too, and lets other files pass', () => {
@@ -57,11 +57,21 @@ test('edit hook blocks an Edit of a user playbook file in any scope, through a s
     assert.match(r.stderr, /playbook new/);
   }
   assert.equal(editHook(w, join(w.root, 'alias', 'babysit-tester.md')).status, 2);
-  assert.equal(editHook(w, join(w.config, 'playbooks/babysit-tester.md'), { JSTACK_ALLOW_PLAYBOOK_EDITS: '1' }).status, 0);
+  assert.equal(editHook(w, join(w.config, 'playbooks/babysit-tester.md'), { PLAYBOOKS_ALLOW_EDITS: '1' }).status, 0);
   const fine = ['config.json', 'playbooks/notes.txt', 'scripts/x/run.md'].map((f) => join(w.config, f));
   for (const file of [...fine, join(w.repo, '.agents', 'playbooks', 'babysitting-an-acme-pr.md'), join(w.root, 'elsewhere.md')]) {
     assert.equal(editHook(w, file).status, 0, file);
   }
+});
+
+test('edit hook reads the JSTACK_* names of its variables until 0.9.0, and ~/.jstack while ~/.jawsome-playbooks is missing', () => {
+  const w = world();
+  const file = join(w.config, 'playbooks/babysit-tester.md');
+  assert.equal(editHook(w, file, { JSTACK_ALLOW_PLAYBOOK_EDITS: '1' }).status, 0);
+  assert.equal(editHook(w, file, { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: w.config }).status, 2);
+  const legacy = join(w.home, '.jstack');
+  renameSync(w.config, legacy);
+  assert.equal(editHook(w, join(legacy, 'playbooks/babysit-tester.md'), { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: null }).status, 2);
 });
 
 test('edit hook allows a direct edit of a file that has a check problem, and only that file', () => {
@@ -79,7 +89,7 @@ test('edit hook covers only top-level files of each scope folder, and leaves a R
 
 test('edit hook fails open and says so when the check cannot run', () => {
   const w = world();
-  const r = editHook(w, join(w.config, 'playbooks/babysit-tester.md'), { JSTACK_PSTACK_DIR: join(w.root, 'nothing') });
+  const r = editHook(w, join(w.config, 'playbooks/babysit-tester.md'), { PLAYBOOKS_PSTACK_DIR: join(w.root, 'nothing') });
   assert.equal(r.status, 0);
   assert.match(JSON.parse(r.stdout).systemMessage, /could not run `playbook check`.*not blocked/);
   assert.match(r.stderr, /could not run `playbook check`/);

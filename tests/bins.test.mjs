@@ -7,7 +7,7 @@ import { BIN, PLAYBOOK, PSTACK, tempDir, world } from './helpers.mjs';
 
 function bins() {
   const w = world();
-  const env = { ...process.env, HOME: w.home, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK };
+  const env = { ...process.env, HOME: w.home, PLAYBOOKS_CONFIG: w.config, PLAYBOOKS_PSTACK_DIR: PSTACK };
   const exec = (bin, args) => {
     const r = spawnSync(bin, args, { cwd: w.repo, encoding: 'utf8', env });
     return { status: r.status, stdout: r.stdout, stderr: r.stderr };

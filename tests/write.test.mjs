@@ -11,7 +11,7 @@ const piped = (w, args, input) => {
     cwd: w.repo,
     input,
     encoding: 'utf8',
-    env: { ...process.env, HOME: w.home, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK },
+    env: { ...process.env, HOME: w.home, PLAYBOOKS_CONFIG: w.config, PLAYBOOKS_PSTACK_DIR: PSTACK },
   });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 };
@@ -180,7 +180,7 @@ test('a check that throws after the write still restores the file', () => {
   writeFileSync(path, LATIN1);
   // The stub runs inside the check, so the file it locks makes the next read throw only after the write landed.
   writeFileSync(join(pstack, 'skills', 'poteto-mode', 'scripts', 'check-playbooks.mjs'), `import { chmodSync, readFileSync } from 'node:fs';\nif (readFileSync(${JSON.stringify(path)}).includes('boom')) chmodSync(${JSON.stringify(join(w.config, 'playbooks', 'other.md'))}, 0);\n`);
-  const r = w.run(['playbook', 'extend', 'babysit', 'combo', 'in', 'Declare the mode', '--with', 'boom'], { env: { JSTACK_PSTACK_DIR: pstack } });
+  const r = w.run(['playbook', 'extend', 'babysit', 'combo', 'in', 'Declare the mode', '--with', 'boom'], { env: { PLAYBOOKS_PSTACK_DIR: pstack } });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /EACCES/);
   assert.deepEqual(readFileSync(path), LATIN1);
