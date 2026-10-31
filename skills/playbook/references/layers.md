@@ -42,7 +42,7 @@ Each org standard file exists once, and each repo's `01-team/` folder links to i
 
 ## Playbook file format
 
-A layer file uses pstack's project-playbook format, plus two keys that pstack ignores:
+A layer file uses pstack-claude's project-playbook format, plus two keys that pstack ignores:
 
 ```markdown
 ---
@@ -60,7 +60,7 @@ source: proposed
 - `when` is required, because poteto-mode matches a standalone playbook only by this sentence.
 - `layer` is required in team files, and is `org.standard` or `repo.standard`. Every other file takes its layer from its folder.
 - `source` is required in team files. It is `proposed`, or a citation of where the file's rules come from, so a teammate can trace each one. `check` lists every `proposed` one.
-- An edit line is a list item (`-`, `*`, or `N.`), then `**After**`, `**Before**`, `**Replace**`, or `**In**`, then a quote in straight double quotes, then the change text. pstack's `check-playbooks.mjs` reads the same grammar, so team files stay valid for pstack alone.
+- An edit line is a list item (`-`, `*`, or `N.`), then `**After**`, `**Before**`, `**Replace**`, or `**In**`, then a quote in straight double quotes, then the change text. pstack-claude's `check-playbooks.mjs` reads the same grammar, so team files stay valid for pstack alone.
 
 ## Writing layer files
 
