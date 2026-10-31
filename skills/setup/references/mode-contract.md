@@ -1,12 +1,12 @@
 # Mode skill contract
 
-Hand these rules to pstack's automate-me skill as fixed requirements for the `<handle>-mode` skill. These rules make the mode skill use jstack, so automate-me must keep them through every revision.
+Hand these rules to pstack's automate-me skill as fixed requirements for the `<handle>-mode` skill. These rules make the mode skill use jawsome-playbooks, so automate-me must keep them through every revision.
 
-1. The mode skill runs poteto-mode first, every time it fires. jstack changes only how the agent assembles playbook steps, and poteto-mode owns everything else.
+1. The mode skill runs poteto-mode first, every time it fires. jawsome-playbooks changes only how the agent assembles playbook steps, and poteto-mode owns everything else.
 2. It performs poteto-mode's copy-and-apply step with `playbook show <playbook>`, and copies the output into the todolist once. The computed list already holds the bundled steps and every team and personal file's edits, so applying the project playbooks again would double them.
 3. It names every line under `Overrides:` in its reply, giving the stem of the file that made the change and the step it changed. An override changes behavior the operator expects from pstack, so the reply must always name it.
 4. When the run reaches a playbook listed under `Hands off to:`, it computes that playbook with `playbook show` too, and runs the computed steps. The callee's own family changes its steps, so running the bundled text would drop them.
-5. It runs `playbook` or `jstack-cli`, whichever is on `PATH`, spelling the second as `jstack-cli playbook show`. When neither is on `PATH`, it follows poteto-mode as written. A machine can have only the compatibility alias, whose output is the same, and the mode skill must still work on a machine without jstack.
+5. It runs `playbook` or `jstack-cli`, whichever is on `PATH`, spelling the second as `jstack-cli playbook show`. When neither is on `PATH`, it follows poteto-mode as written. A machine can have only the deprecated alias, whose output is the same, and the mode skill must still work on a machine without jstack.
 
 ## Trigger
 
