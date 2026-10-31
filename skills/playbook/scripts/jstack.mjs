@@ -400,7 +400,7 @@ function nearMisses(text, index) {
 /** Each `<playbook> step N`, `steps N, M` or `steps N-M` that names a step the merged playbook lacks. */
 function badStepRefs(text, index, playbooks) {
   if (index.names.length === 0) return [];
-  const re = new RegExp(`(?<![\\w-])(${nameAlternatives(index)})(?:\\.md)?(?:\\*\\*|\`)?\\s+steps?\\s+(\\d+(?:\\s*(?:,|and|or|to|&|-|–)\\s*\\d+)*)(?![\\w-])`, 'gi');
+  const re = new RegExp(`(?<![\\w-])(${nameAlternatives(index)})(?:\\.md)?(?:\\*\\*|\`)?\\s+steps?\\s+(\\d+(?:(?:\\s*(?:,|and|or|to|&)\\s*|[-–])\\d+)*)(?![\\w-])`, 'gi');
   return [...text.matchAll(re)].flatMap((m) => {
     const stem = index.resolve(m[1]);
     const count = playbooks.get(stem)?.steps.length;
@@ -1056,6 +1056,9 @@ const contextLines = (contexts, ctx, analysis) => contexts.flatMap((c) => {
   return report.passed ? [] : reportLines(report).map((line) => `in ${c.repo.name ?? 'no repo'}: ${line}`);
 });
 
+/** A stale step reference names the live step count, which the write itself can change. */
+const sameProblem = (line) => line.replace(/ has \d+ steps?$/, ' has N steps');
+
 /**
  * Writes `next`, then runs check in every context that reads the file's folder, since a user file changes what an org
  * or repo override can quote. Only a problem the write added refuses it, so a problem already on disk never blocks an
@@ -1064,7 +1067,7 @@ const contextLines = (contexts, ctx, analysis) => contexts.flatMap((c) => {
  */
 function commitWrite(ctx, layer, path, prior, next) {
   const contexts = everyContext(ctx).filter((c) => LAYERS[layer].dir(c) === dirname(path));
-  const before = new Set(contextLines(contexts));
+  const before = new Set(contextLines(contexts).map(sameProblem));
   let made = null;
   for (let d = dirname(path); !lexists(d); d = dirname(d)) made = d;
   mkdirSync(dirname(path), { recursive: true });
@@ -1073,7 +1076,7 @@ function commitWrite(ctx, layer, path, prior, next) {
     writeFileSync(path, next);
     const analysis = analyze(ctx, { pstackCheck: true });
     const after = contextLines(contexts, ctx, analysis);
-    const added = after.filter((line) => !before.has(line));
+    const added = after.filter((line) => !before.has(sameProblem(line)));
     if (added.length) throw Object.assign(new UsageError(`refused: this edit adds check problems, so nothing was written\n${added.join('\n')}`), { status: 1 });
     committed = true;
     return { analysis, remaining: after };
