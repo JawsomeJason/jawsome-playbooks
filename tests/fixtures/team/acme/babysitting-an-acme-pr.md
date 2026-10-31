@@ -1,7 +1,6 @@
 ---
 extends: babysit
 when: babysitting a pull request in an acme repo
-layer: org.standard
 source: proposed
 ---
 

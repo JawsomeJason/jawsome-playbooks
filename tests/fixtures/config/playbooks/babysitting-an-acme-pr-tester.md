@@ -1,5 +1,5 @@
 ---
-extends: babysit
+extends: babysitting-an-acme-pr, babysit-tester
 when: babysitting a pull request in an acme repo
 ---
 
