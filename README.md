@@ -1,19 +1,20 @@
 # jstack
 
-jstack layers your personal and team playbooks over pstack's bundled poteto-mode playbooks. The layers apply in a fixed order, and a later layer wins, as in CSS cascade layers. `playbook` prints each playbook with every layer applied, tags each step with the layer that wrote it, and lists every override. An agent runs one step list, and you see whose rule changed which step.
+jstack extends team playbooks with personal ones, over pstack's bundled poteto-mode playbooks. Each file names the playbook it changes in `extends`, as pstack-claude's project playbooks do, and those chains set the order: parents first, team files before personal ones. `playbook` prints each playbook with every file that extends it applied, tags each step with the file that wrote it, and lists every override. An agent runs one step list, and you see whose rule changed which step.
 
 jstack keeps pstack's playbook format and edit grammar, adds no verbs, and never pins a pstack version. After a pstack upgrade, `playbook check` names each quote that no longer matches its step.
 
-jstack ships three skills. The `playbook` skill runs `playbook` for an agent. The `learn` skill turns a session's corrections into proposed layer edits and writes the ones you pick. The `setup` skill writes your `<handle>-mode` skill, scaffolds the config dir, and links team folders into your repos. You can rerun `setup` at any time.
+jstack ships three skills. The `playbook` skill runs `playbook` for an agent. The `learn` skill turns a session's corrections into proposed playbook edits and writes the ones you pick. The `setup` skill writes your `<handle>-mode` skill, scaffolds the config dir, and records your repos' checkouts. You can rerun `setup` at any time.
 
-In Claude Code, the plugin's hook stops an agent from reading an installed pstack playbook file directly and names the `playbook show` command to run instead. That file holds only pstack's steps, so reading it would skip your layers.
+In Claude Code, the plugin's hook stops an agent from reading an installed pstack playbook file directly and names the `playbook show` command to run instead. That file holds only pstack's steps, so reading it would skip your edits.
 
-A second hook blocks a direct Edit or Write of a top-level `.md` file, other than a `README.md`, in `01-user/`, `02-orgs/*/02-overrides/` or `03-repos/*/02-overrides/` of your config dir, resolving symlinks, and names `playbook extend` and `playbook new` instead. Those commands accept only valid grammar and undo a write that adds a `playbook check` problem. The hook allows a direct edit of a file that has a `check` problem, so a stale quote can always be repaired, and it allows the edit and says so when `check` cannot run. Set `JSTACK_ALLOW_LAYER_EDITS=1` to edit by hand anyway. The `learn` skill writes personal and overrides layers through the commands, so the hook does not stop it.
+A second hook blocks a direct Edit or Write of a top-level `.md` file, other than a `README.md`, in `playbooks/`, `playbooks/orgs/*/` or `playbooks/repos/*/` of your config dir, resolving symlinks, and names `playbook extend` and `playbook new` instead. Those commands accept only valid grammar and undo a write that adds a `playbook check` problem. The hook allows a direct edit of a file that has a `check` problem, so a stale quote can always be repaired, and it allows the edit and says so when `check` cannot run. Set `JSTACK_ALLOW_PLAYBOOK_EDITS=1` to edit by hand anyway. The `learn` skill writes personal files through the commands, so the hook does not stop it.
 
-The hooks have known gaps. A Bash command can still write a layer file (`sed -i`, `tee`, a redirect) or read a bundled playbook that mentions `jstack` or `playbook show` anywhere in the command. The read hook covers Read and Bash only, so Grep and Glob can still read a bundled playbook. Other harnesses have no hooks.
+The hooks have known gaps. A Bash command can still write a playbook file (`sed -i`, `tee`, a redirect) or read a bundled playbook that mentions `jstack` or `playbook show` anywhere in the command. The read hook covers Read and Bash only, so Grep and Glob can still read a bundled playbook. Other harnesses have no hooks.
 
 - The [playbook reference](skills/playbook/references/cli.md) lists the commands, flags, exit codes, and environment variables.
-- [Layers, files, and the cascade](skills/playbook/references/layers.md) describes the config dir, the layer file format, and how layers apply.
+- [Playbook files, families, and order](skills/playbook/references/playbooks.md) describes where files live, their format and names, the order they apply in, and what `check` validates, each rule marked with the project that provides it.
+- [ADR-0001](docs/adr/0001-extends-chains-replace-layers.md) records why `extends` chains replaced numbered layer folders.
 - [CONTRIBUTING.md](CONTRIBUTING.md) lists the checks and the rules for changes.
 - [GLOSSARY.md](GLOSSARY.md) defines the terms these docs use and says which of upstream pstack, pstack-claude or jstack each comes from.
 
@@ -98,7 +99,7 @@ playbook finds pstack without help when the harness keeps a plugin cache in a do
 
 ### 5. Run setup
 
-Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the config dir, links team folders into your repos, and links the mode skill into the skill folders your harness loads. The config dir is `$HOME/.jstack`, or `$JSTACK_CONFIG` when you set it. If it holds rules you would not publish, keep it private.
+Run the `setup` skill. It writes your `<handle>-mode` skill, scaffolds the config dir, records your repos' checkouts, and links the mode skill into the skill folders your harness loads. The config dir is `$HOME/.jstack`, or `$JSTACK_CONFIG` when you set it. If it holds rules you would not publish, keep it private.
 
 After setup, start a new session, so the harness loads `/<handle>-mode`. To check the install later, run `playbook doctor`. It prints each check with `✓` or `✗` and the commands that fix each failure. `playbook doctor --fix` asks before it runs each fix. The [doctor reference](skills/playbook/references/cli.md#doctor) lists the checks.
 

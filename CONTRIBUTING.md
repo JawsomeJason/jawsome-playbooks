@@ -7,7 +7,7 @@ node --test 'tests/*.test.mjs'
 claude plugin validate .
 ```
 
-The tests in `tests/jstack.test.mjs` run playbook against a fake pstack in `tests/fixtures/pstack/` and a config dir in `tests/fixtures/config/`. That config dir has files in all five layers and uses all four edit verbs.
+The tests in `tests/jstack.test.mjs` run playbook against a fake pstack in `tests/fixtures/pstack/` and a config dir in `tests/fixtures/config/`. That config dir has user files in every scope folder, including a three-deep chain, and `tests/fixtures/team/` holds the team files that `world()` in `tests/helpers.mjs` commits into a checkout's `.agents/playbooks`. Together they use all four edit verbs.
 
 `tests/readme-harnesses.test.mjs` reads pstack-claude's README from `PSTACK_CLAUDE_README`, or from the pstack-claude marketplace clone under `$HOME/.*/plugins/marketplaces/`. Without either, the test skips and says why. CI clones pstack-claude, so the test always runs there.
 

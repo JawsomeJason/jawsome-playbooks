@@ -1,55 +1,69 @@
 # Glossary
 
-Terms jstack's docs and skills use, in alphabetical order.
+Terms jstack's docs and skills use, in alphabetical order. Each entry is tagged **[pstack-claude]** when the term or behavior comes from pstack-claude, so a teammate without jstack has it too, or **[jstack]** when only jstack provides it. An entry about upstream pstack says so.
 
-**Anchor quote.** The run of a step's own words, in straight double quotes, that an edit line names so the edit lands on that step. It must match exactly one numbered step, as the lower layers left it, with whitespace collapsed. A pstack upgrade that rewrites the step breaks the quote, and `playbook check` names it.
+**Anchor quote.** The run of a step's own words, in straight double quotes, that an edit line names so the edit lands on that step. [pstack-claude] It must match exactly one numbered step, as the file's ancestors leave it, with whitespace collapsed; a sibling's text is invisible to it. [jstack] A pstack upgrade that rewrites the step breaks the quote, and `playbook check` names it.
 
-**Bundled playbook.** A playbook that ships inside pstack's poteto-mode skill. jstack never copies it: it reads it from the installed pstack and applies the layers on top.
+**Bundled playbook.** A playbook that ships inside pstack's poteto-mode skill. jstack never copies it: it reads it from the installed pstack and applies the files that extend it on top. [pstack-claude]
 
-**Cascade order.** The fixed order the layers apply in, lowest first: user, org.standard, org.overrides, repo.standard, repo.overrides. A later layer wins, as in CSS cascade layers, and the numbered folders in the config dir spell out the same order.
+**`check-playbooks.mjs`.** pstack-claude's checker for project playbooks, at `skills/poteto-mode/scripts/check-playbooks.mjs`. It fails when a project playbook extends a playbook the installed pstack lacks, quotes step text that pstack does not have, or writes a change with no straight-quoted anchor. `playbook check` runs it first when the repo has `.agents/playbooks`. [pstack-claude]
 
-**`check-playbooks.mjs`.** pstack-claude's checker for project playbooks, at `skills/poteto-mode/scripts/check-playbooks.mjs`. It fails when a project playbook extends a playbook the installed pstack lacks, quotes step text that pstack does not have, or writes a change with no straight-quoted anchor. `playbook check` runs it first when the repo has `.agents/playbooks`.
+**Dormant.** A file whose parent exists only in another context, such as a user file that extends a team file another repo has. It applies nowhere here, and `check` reports it as info, not a problem. A child of a dormant file is dormant too. [jstack]
 
-**Edit line.** A list item (`-`, `*` or `N.`) in a layer file that changes one step: a bold edit verb, an anchor quote, then the change text. A list item with no verb is a note. The grammar comes from pstack-claude's project playbooks policy fork, not upstream pstack, and jstack adds no verbs to it.
+**Edit line.** A list item (`-`, `*` or `N.`) in a playbook file that changes one step: a bold edit verb, an anchor quote, then the change text. A list item with no verb is a note. The grammar comes from pstack-claude's project playbooks policy fork, not upstream pstack, and jstack adds no verbs to it. [pstack-claude]
 
-**Edit verb.** One of the four bold words an edit line starts with. `**After**` and `**Before**` insert a new step next to the quoted one, `**Replace**` strikes the quoted words and adds the change text after them, and `**In**` appends the change text to the step.
+**Edit verb.** One of the four bold words an edit line starts with. `**After**` and `**Before**` insert a new step next to the quoted one, `**Replace**` strikes the quoted words and adds the change text after them, and `**In**` appends the change text to the step. [pstack-claude]
 
-**`extends`.** The frontmatter key that lists, separated by commas, the playbook stems a layer file edits. It patches those playbooks in place and does not create a derived playbook under the file's name. It comes from pstack-claude's project playbooks policy fork, not upstream pstack, and jstack also lets it name a standalone playbook that a lower layer defines.
+**`extends`.** The frontmatter key that names a file's parents by stem, separated by commas. It patches them in place and does not create a derived playbook under the file's name. One level, a team file over bundled playbooks, is [pstack-claude]. Chains, where a user file extends a team file or another user file, are [jstack]. The chains set the apply order.
 
-**Handle.** The short name the operator picks when running `setup`, stored as `handle` in `config.json`. It names the mode skill, `<handle>-mode`.
+**Family.** A root and every active file that reaches it through `extends`, directly or through a chain. A file with several parents belongs to each one's family. `playbook show` applies a whole family. [pstack-claude] for team files, [jstack] across chains.
 
-**Handoff.** A point where a playbook sends the work to another playbook, which the mode skill then computes with `playbook show` and runs. In layer-file text it registers only as a `playbooks/<stem>.md` path, or as a playbook named right after `run`, `per`, `route ... to` or `hand ... to`, written as a bold title, a capitalized title or a kebab-case stem. A lowercase `run babysit` does not register, and `check` never reads the handoff wording inside pstack's own text.
+**Handle.** The short name the operator picks when running `setup`, stored as `handle` in `config.json`. It names the mode skill, `<handle>-mode`, and is the default qualifier in a user file's name, `<parent>-<handle>`. [jstack]
 
-**jstack.** A plugin that layers personal, org and repo playbook edits over pstack-claude's bundled playbooks and checks them against each pstack release. It needs pstack-claude, because project playbooks and `check-playbooks.mjs` exist only in the port. It ships the `playbook`, `learn` and `setup` skills.
+**Handoff.** A point where a playbook sends the work to another playbook, which the mode skill then computes with `playbook show` and runs. In a playbook file it registers only as a `playbooks/<stem>.md` path, or as a playbook named right after `run`, `per`, `route ... to` or `hand ... to`, written as a bold title, a capitalized title or a kebab-case stem. A name resolves to its root's family. A lowercase `run babysit` does not register, and `check` never reads the handoff wording inside pstack's own text. [jstack]
 
-**`jstack-cli`.** A compatibility alias of the `playbook` command, with the same flags and output. It spells the playbook commands `jstack-cli playbook show` and so on, and keeps `jstack-cli check` and `jstack-cli doctor` as they are.
+**jstack.** A plugin that extends pstack-claude's bundled playbooks with team and personal playbook files, ordered by their `extends` chains, and checks them against each pstack release. It needs pstack-claude, because project playbooks and `check-playbooks.mjs` exist only in the port. It ships the `playbook`, `learn` and `setup` skills. [jstack]
 
-**Layer.** One level of playbook edits, held in one folder of the config dir or in a repo's team files. A layer extends only playbooks below it in the cascade order, so `check` fails a file whose `extends` names a playbook that the same or a higher layer defines.
+**`jstack-cli`.** A compatibility alias of the `playbook` command, with the same flags and output. It spells the playbook commands `jstack-cli playbook show` and so on, and keeps `jstack-cli check` and `jstack-cli doctor` as they are. [jstack]
 
-**Mode skill.** The operator's `<handle>-mode` skill, which pstack's automate-me writes during `setup`. It runs poteto-mode first, takes each playbook's steps from `playbook show` instead of applying project playbooks by hand, and names every override in its reply.
+**Mode skill.** The operator's `<handle>-mode` skill, which pstack's automate-me writes during `setup`. It runs poteto-mode first, takes each playbook's steps from `playbook show` instead of applying project playbooks by hand, and names every override by the stem of the file that made it. [jstack]
 
-**Playbook.** A numbered step list that poteto-mode follows for one kind of recurring work, such as babysitting a PR. Each one is either a bundled playbook or a standalone playbook that a layer defines.
+**Parent.** A stem a file's `extends` names. A team file's parents are bundled playbooks only [pstack-claude]; a user file's parents may also be team files and user files [jstack].
 
-**`playbook`.** jstack's command, `scripts/jstack.mjs` in the `playbook` skill, which needs only Node. Its commands are `list`, `show`, `locate`, `extend`, `new`, `check` and `doctor`. It is not named `jstack` because Java development kits install a `jstack` of their own that can shadow it.
+**Patch.** A file with a non-empty `extends`. It never becomes a step list of its own: it edits its family's root. [pstack-claude]
 
-**`playbook check`.** Validates every layer file against the installed pstack, after running pstack-claude's `check-playbooks.mjs` when the repo has `.agents/playbooks`. It reports stale or ambiguous quotes, unknown `extends` stems, unresolved handoffs and step references, and broken links. A pass records the checked pstack version in `config.json`.
+**Playbook.** A numbered step list that poteto-mode follows for one kind of recurring work, such as babysitting a PR. Each one is either a bundled playbook or a standalone playbook. [pstack-claude]
 
-**`playbook extend`.** Writes one edit line into a layer file in the user, org overrides or repo overrides layer, and creates the file with `extends: <parent>` when it is missing. It refuses a quote that does not match exactly one step, and undoes a write that adds a `check` problem.
+**`playbook`.** jstack's command, `scripts/jstack.mjs` in the `playbook` skill, which needs only Node. Its commands are `list`, `show`, `locate`, `extend`, `new`, `check` and `doctor`. It is not named `jstack` because Java development kits install a `jstack` of their own that can shadow it. [jstack]
 
-**`playbook locate`.** Names the one step of the computed playbook that a quote finds, and the file each active layer would hold an edit to it in. It judges the quote against the step as the layers below each layer leave it.
+**`playbook check`.** Validates every team file and active user file against the installed pstack, after running pstack-claude's `check-playbooks.mjs` when the repo has `.agents/playbooks`. It reports stale or ambiguous quotes, missing parents, cycles, repeated stems, sibling `Replace` clashes, unresolved handoffs and step references, retired `layer:` keys and numbered folders, and broken links, and notes dormant files. A pass records the checked pstack version in `config.json`. [jstack]
 
-**`playbook new`.** Writes a standalone playbook: a file with an empty `extends`, a `when` sentence and numbered steps. It refuses a name that pstack or a layer at or below the chosen one already defines, and a body with edit lines.
+**`playbook extend`.** Writes one edit line into a user file, in `playbooks/` or the scope folder `--scope` picks, and creates the file with `extends: <parent>` when it is missing. The file name defaults to `<parent>-<handle>`. It refuses a quote that does not match exactly one step its parent can see, and undoes a write that adds a `check` problem. [jstack]
 
-**`playbook show`.** Prints one playbook with every layer applied in cascade order, and tags each step with its origin layer and each layer that edited it. Sections after the steps list handoffs, notes, overrides and problems. `compute` is an alias of it.
+**`playbook locate`.** Names the one step of the computed family that a quote finds, the stems that wrote and edited that step, the file that wrote the quoted words, and the user file an edit belongs in, which extends that writer. [jstack]
 
-**Project playbook.** pstack-claude's name for a Markdown file in a repo's `.agents/playbooks/`, with `extends` and `when` frontmatter, that poteto-mode applies over the bundled steps. In jstack, a repo's team files are its project playbooks.
+**`playbook new`.** Writes a standalone playbook in `playbooks/` or the scope folder `--scope` picks: a file with an empty `extends`, a `when` sentence and numbered steps. It refuses a name pstack or any file already uses, and a body with edit lines. [jstack]
+
+**`playbook show`.** Prints a root's family with every member applied in apply order, and tags each step with the stem of the file that wrote it and each stem that edited it. Any member's name prints its root's family. Sections after the steps list the family, handoffs, notes, overrides and problems. `compute` is an alias of it. [jstack]
+
+**Project playbook.** pstack-claude's name for a Markdown file in a repo's `.agents/playbooks/`, with `extends` and `when` frontmatter, that poteto-mode applies over the bundled steps. In jstack, a repo's team files are its project playbooks. [pstack-claude]
 
 **pstack (upstream).** Lauren Tan's Cursor plugin at [cursor/plugins/pstack](https://github.com/cursor/plugins/tree/main/pstack), which provides poteto-mode and its playbooks. Upstream owns most of the playbook content, including the handoff wording inside it. pstack-claude carries its own policy changes to a few playbooks, such as Babysit, Autopilot and Shipping. It has no project playbooks, `extends` or `check-playbooks.mjs`, so jstack does not run on it.
 
 **pstack-claude.** Michael Denyer's [port of pstack](https://github.com/michael-denyer/pstack-claude) for Claude Code, Codex, Pi, GitHub Copilot, Muse and other harnesses, installed as `pstack@pstack-claude`. It tracks upstream and carries named forks declared in `tools/forks.json`, such as the project playbooks paragraph in its `poteto-mode/SKILL.md` policy fork. jstack builds on this port.
 
-**Standalone playbook.** A playbook that a layer file defines on its own, with an empty `extends` and a stem that names no lower playbook, so its numbered steps are its body. poteto-mode matches it only by its `when` sentence, and it cannot carry edit lines.
+**Root.** A bundled playbook, or a standalone playbook. Every family has one root, and `show` prints a family under its root's name. [pstack-claude]
 
-**Team file.** A layer file in the org.standard or repo.standard layer, which a repo's `.agents/playbooks/` shows and a pull request changes. It needs `layer` and `source` keys, and may quote only pstack's own text, because pstack's checker reads it without the other layers.
+**Scope folder.** `playbooks/orgs/<org>/` or `playbooks/repos/<repo>/` in the config dir. A user file there is active only in that org's or that repo's checkouts. The folder says where a file is active, never its order. [jstack]
 
-**`when`.** The required frontmatter sentence that names the requests a layer file serves. poteto-mode matches a standalone playbook only by this sentence.
+**Scope word.** The org name or repo key that a team file carries in its name, as one hyphen-separated word, such as `roobet` in `opening-a-roobet-pr`. It keeps a team file from colliding with a future bundled stem. `check` reports a missing one as info. [jstack]
+
+**Sibling.** A file that shares a parent with another and neither descends from the other. Both apply, and neither's quotes see the other's text. Their `In` and `After` text lands in apply order, and two siblings that `Replace` the same words fail `check`. [pstack-claude] for team siblings, [jstack] for the rest.
+
+**Standalone playbook.** A playbook a file defines on its own, with an empty `extends` and a unique stem, so its numbered steps are its body. poteto-mode matches it only by its `when` sentence [pstack-claude], and jstack also finds it by name through a handoff [jstack]. It cannot carry edit lines.
+
+**Team file.** A playbook file in a repo's `.agents/playbooks/`, which the repo commits and a pull request changes. [pstack-claude] It extends only bundled playbooks and quotes only pstack's text, because pstack's checker reads it without personal files. [pstack-claude]
+
+**User file.** A playbook file in the config dir, in `playbooks/` or a scope folder. Only user files form chains, and `playbook extend` and `playbook new` write them. [jstack]
+
+**`when`.** The required frontmatter sentence that names the requests a file serves. poteto-mode matches a standalone playbook only by this sentence. [pstack-claude]
