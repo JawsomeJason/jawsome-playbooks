@@ -5,15 +5,15 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { BIN, CLI, PLAYBOOK, PSTACK, git, world } from './helpers.mjs';
 
-const JSTACK_PLUGIN = { id: 'jstack@jstack', version: '0.1.0', scope: 'user', enabled: true };
-const JSTACK_MARKET = { name: 'jstack', source: 'github', repo: 'JawsomeJason/jstack' };
+const PLUGIN = { id: 'jawsome-playbooks@jawsome-playbooks', version: '0.1.0', scope: 'user', enabled: true };
+const MARKET = { name: 'jawsome-playbooks', source: 'github', repo: 'JawsomeJason/jawsome-playbooks' };
 
 /**
- * A healthy jstack install in a fake home: a stub `claude` on PATH that logs every call and lists `plugins`, jstack-cli
- * and Java's `jstack` on PATH, the mode skill linked into ~/.claude/skills, and the web checkout recorded in
+ * A healthy jawsome-playbooks install in a fake home: a stub `claude` on PATH that logs every call and lists `plugins`,
+ * playbook and its deprecated alias jstack-cli on PATH, the mode skill linked into ~/.claude/skills, and the web checkout recorded in
  * config.json with its team playbooks committed. Tests remove one piece at a time.
  */
-function doctorWorld({ plugins = [JSTACK_PLUGIN], marketplaces = [JSTACK_MARKET], claude = true, ...opts } = {}) {
+function doctorWorld({ plugins = [PLUGIN], marketplaces = [MARKET], claude = true, ...opts } = {}) {
   const w = world(opts);
   const bin = join(w.root, 'bin');
   const log = join(w.root, 'claude.log');
@@ -33,8 +33,6 @@ esac
     );
     chmodSync(join(bin, 'claude'), 0o755);
   }
-  writeFileSync(join(bin, 'jstack'), '#!/bin/sh\necho java\n');
-  chmodSync(join(bin, 'jstack'), 0o755);
   symlinkSync(BIN, join(bin, 'jstack-cli'));
   symlinkSync(PLAYBOOK, join(bin, 'playbook'));
   const layers = JSON.parse(readFileSync(join(w.config, 'config.json'), 'utf8'));
@@ -54,14 +52,13 @@ esac
 }
 
 const HEALTHY = (w) => `✓ pstack-claude 1.0.0: ${PSTACK}
-✓ jstack 0.1.0 installed in Claude Code (user scope)
-✓ jstack-cli: ${w.bin}/jstack-cli -> ${realpathSync(BIN)}
+✓ jawsome-playbooks 0.1.0 installed in Claude Code (user scope)
 ✓ playbook: ${w.bin}/playbook -> ${realpathSync(PLAYBOOK)}
-- jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
+✓ jstack-cli: ${w.bin}/jstack-cli -> ${realpathSync(BIN)}
 ✓ config ${w.config}: config.json parses, handle tester
 ✓ mode skill ${w.config}/mode/tester-mode is linked into ${w.home}/.claude/skills
 ✓ web: ${w.repo}/.agents/playbooks holds 2 team playbooks
-✓ jstack-cli check --repo web passed
+✓ playbook check --repo web passed
 doctor passed
 `;
 
@@ -76,7 +73,7 @@ test('doctor passes a healthy install, only reads, and writes nothing', () => {
   assert.equal(readFileSync(join(w.config, 'config.json'), 'utf8'), before, 'check runs pinned, so it records no pstack version');
 });
 
-/** Removes the jstack plugin, jstack-cli, the mode link, and the team playbooks from a healthy world. */
+/** Removes the plugin, both command links, the mode link, and the team playbooks from a healthy world. */
 function brokenWorld(opts) {
   const w = doctorWorld({ plugins: [], marketplaces: [], ...opts });
   unlinkSync(join(w.bin, 'jstack-cli'));
@@ -98,57 +95,56 @@ test('each failing check prints the exact commands that fix it, and doctor exits
   assert.equal(
     r.stdout,
     `✓ pstack-claude 1.0.0: ${PSTACK}
-✗ jstack is not installed in Claude Code
-    claude plugin marketplace add JawsomeJason/jstack
-    claude plugin install jstack@jstack -s user
-✗ jstack-cli is not on PATH
-    mkdir -p ${w.home}/.local/bin
-    ln -s ${realpathSync(BIN)} ${w.home}/.local/bin/jstack-cli
-    add ${w.home}/.local/bin to PATH
+✗ jawsome-playbooks is not installed in Claude Code
+    claude plugin marketplace add JawsomeJason/jawsome-playbooks
+    claude plugin install jawsome-playbooks@jawsome-playbooks -s user
 ✗ playbook is not on PATH
     mkdir -p ${w.home}/.local/bin
     ln -s ${realpathSync(PLAYBOOK)} ${w.home}/.local/bin/playbook
     add ${w.home}/.local/bin to PATH
-- jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
+- jstack-cli, the deprecated alias of playbook until 0.9.0, is not on PATH
+    mkdir -p ${w.home}/.local/bin
+    ln -s ${realpathSync(BIN)} ${w.home}/.local/bin/jstack-cli
+    add ${w.home}/.local/bin to PATH
 ✓ config ${w.config}: config.json parses, handle tester
 ✗ mode skill ${w.config}/mode/tester-mode is not linked into any skills folder
     ln -s ${w.config}/mode/tester-mode ${w.home}/.claude/skills/tester-mode
 - web: ${w.repo} has no .agents/playbooks, so it has no team playbooks
-✓ jstack-cli check --repo web passed
-doctor failed: 4 problems
+✓ playbook check --repo web passed
+doctor failed: 3 problems
 `,
   );
   assert.equal(r.status, 1);
   assert.equal(w.calls(), 'plugin list --json\nplugin marketplace list --json\n');
 });
 
-test('a missing playbook link only informs while jstack-cli works, and --fix still offers it', () => {
+test('a missing jstack-cli link only informs, because it is a deprecated alias, and --fix still offers it', () => {
   const w = doctorWorld();
-  unlinkSync(join(w.bin, 'playbook'));
+  unlinkSync(join(w.bin, 'jstack-cli'));
   const r = w.doctor();
   assert.equal(r.status, 0, r.stdout);
-  assert.ok(r.stdout.includes(`- playbook is not on PATH\n    mkdir -p ${w.home}/.local/bin\n    ln -s ${realpathSync(PLAYBOOK)} ${w.home}/.local/bin/playbook\n`), r.stdout);
+  assert.ok(r.stdout.includes(`- jstack-cli, the deprecated alias of playbook until 0.9.0, is not on PATH\n    mkdir -p ${w.home}/.local/bin\n    ln -s ${realpathSync(BIN)} ${w.home}/.local/bin/jstack-cli\n`), r.stdout);
   assert.match(r.stdout, /doctor passed\n$/);
   assert.deepEqual(JSON.parse(w.doctor(['--json']).stdout).findings.filter((f) => f.id === 'cli').map((f) => f.status), ['ok', 'info']);
   assert.match(w.doctor(['--fix']).stdout, /fixes not run: no terminal to ask on/);
 });
 
 test('doctor --json carries each finding with its status and fixes', () => {
-  const w = brokenWorld({ marketplaces: [JSTACK_MARKET] });
+  const w = brokenWorld({ marketplaces: [MARKET] });
   const r = w.doctor(['--json']);
   const out = JSON.parse(r.stdout);
   assert.equal(r.status, 1);
   assert.equal(out.passed, false);
   assert.deepEqual(
     out.findings.map((f) => [f.id, f.status]),
-    [['pstack', 'ok'], ['plugin', 'fail'], ['cli', 'fail'], ['cli', 'fail'], ['jstack', 'info'], ['config', 'ok'], ['mode', 'fail'], ['repo:web', 'info'], ['check:web', 'ok']],
+    [['pstack', 'ok'], ['plugin', 'fail'], ['cli', 'fail'], ['cli', 'info'], ['config', 'ok'], ['mode', 'fail'], ['repo:web', 'info'], ['check:web', 'ok']],
   );
   assert.deepEqual(out.findings[1], {
     id: 'plugin',
     status: 'fail',
-    message: 'jstack is not installed in Claude Code',
+    message: 'jawsome-playbooks is not installed in Claude Code',
     details: [],
-    fixes: [{ command: 'claude plugin install jstack@jstack -s user', run: true }],
+    fixes: [{ command: 'claude plugin install jawsome-playbooks@jawsome-playbooks -s user', run: true }],
   });
 });
 
@@ -160,28 +156,28 @@ test('without claude on PATH, doctor reads install records and prints every harn
   assert.ok(at('✗ pstack-claude not found') >= 0, r.stdout);
   assert.equal(out[at('✗ pstack-claude not found') + 1], '    Claude Code: claude plugin marketplace add michael-denyer/pstack-claude, then claude plugin install pstack@pstack-claude -s user');
   assert.ok(out.includes('    Pi: pi install git:github.com/michael-denyer/pstack-claude'), r.stdout);
-  assert.ok(at('✗ jstack is not installed in any harness install record') >= 0, r.stdout);
-  assert.ok(out.includes('    Codex: codex plugin marketplace add JawsomeJason/jstack, then codex plugin add jstack@jstack'), r.stdout);
+  assert.ok(at('✗ jawsome-playbooks is not installed in any harness install record') >= 0, r.stdout);
+  assert.ok(out.includes('    Codex: codex plugin marketplace add JawsomeJason/jawsome-playbooks, then codex plugin add jawsome-playbooks@jawsome-playbooks'), r.stdout);
   assert.equal(r.status, 1);
 
   const record = join(w.home, '.someharness', 'plugins');
   mkdirSync(record, { recursive: true });
-  writeFileSync(join(record, 'installed_plugins.json'), JSON.stringify({ plugins: { 'jstack@market': [{ scope: 'user', version: '0.2.0' }] } }));
-  assert.ok(w.doctor().stdout.includes(`✓ jstack 0.2.0 in ${record}/installed_plugins.json\n`));
+  writeFileSync(join(record, 'installed_plugins.json'), JSON.stringify({ plugins: { 'jawsome-playbooks@market': [{ scope: 'user', version: '0.2.0' }] } }));
+  assert.ok(w.doctor().stdout.includes(`✓ jawsome-playbooks 0.2.0 in ${record}/installed_plugins.json\n`));
 });
 
-test('a jstack-cli on PATH that is not jstack fails with no command to run', () => {
+test('a playbook on PATH that is not ours fails with no command to run', () => {
   const w = doctorWorld();
-  unlinkSync(join(w.bin, 'jstack-cli'));
-  writeFileSync(join(w.bin, 'jstack-cli'), '#!/bin/sh\n');
-  chmodSync(join(w.bin, 'jstack-cli'), 0o755);
+  unlinkSync(join(w.bin, 'playbook'));
+  writeFileSync(join(w.bin, 'playbook'), '#!/bin/sh\n');
+  chmodSync(join(w.bin, 'playbook'), 0o755);
   const out = JSON.parse(w.doctor(['--json']).stdout);
   assert.deepEqual(out.findings.find((f) => f.id === 'cli'), {
     id: 'cli',
     status: 'fail',
-    message: `jstack-cli on PATH is ${w.bin}/jstack-cli, which is not jstack's`,
+    message: `playbook on PATH is ${w.bin}/playbook, which is not jawsome-playbooks'`,
     details: [],
-    fixes: [{ command: `move ${w.bin}/jstack-cli aside, then: ln -s ${realpathSync(BIN)} ${w.home}/.local/bin/jstack-cli`, run: false }],
+    fixes: [{ command: `move ${w.bin}/playbook aside, then: ln -s ${realpathSync(PLAYBOOK)} ${w.home}/.local/bin/playbook`, run: false }],
   });
 });
 
@@ -189,8 +185,8 @@ test('a missing config dir fails and names the setup command', () => {
   const w = doctorWorld();
   rmSync(w.config, { recursive: true });
   const r = w.doctor();
-  assert.ok(r.stdout.includes(`✗ no config dir at ${w.config}\n    /jstack:setup\n`), r.stdout);
-  assert.ok(r.stdout.includes('✓ jstack-cli check passed\n'), r.stdout);
+  assert.ok(r.stdout.includes(`✗ no config dir at ${w.config}\n    /jawsome-playbooks:setup\n`), r.stdout);
+  assert.ok(r.stdout.includes('✓ playbook check passed\n'), r.stdout);
   assert.equal(r.status, 1);
 });
 
@@ -223,11 +219,11 @@ test('team playbooks that git does not track are info, and a leftover link into 
   assert.equal(linked.status, 1);
 });
 
-test('a failing jstack-cli check shows its lines', () => {
+test('a failing playbook check shows its lines', () => {
   const w = doctorWorld({ files: { 'playbooks/broken.md': '---\nextends: babysit\n---\n\n- **In** "no such words" more.\n' } });
   const r = w.doctor();
   assert.ok(
-    r.stdout.includes(`✗ jstack-cli check --repo web failed
+    r.stdout.includes(`✗ playbook check --repo web failed
     ${w.config}/playbooks/broken.md:1: missing when:
     ${w.config}/playbooks/broken.md:5: quote not found: "no such words"
 `),
@@ -249,7 +245,7 @@ const python = spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' 
 
 test('doctor --fix asks per fix on the terminal and runs only the ones answered y', { skip: python ? false : 'needs python3 for a pseudo-terminal' }, () => {
   const w = brokenWorld();
-  // Answers, in finding order: jstack plugin y, jstack-cli n, playbook n, mode link y.
+  // Answers, in finding order: plugin y, playbook n, jstack-cli n, mode link y.
   const pty = 'import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)';
   const r = spawnSync(python, ['-c', pty, process.execPath, CLI, 'doctor', '--fix'], {
     cwd: w.outside,
@@ -259,7 +255,7 @@ test('doctor --fix asks per fix on the terminal and runs only the ones answered 
   });
   assert.equal(
     w.calls(),
-    'plugin list --json\nplugin marketplace list --json\nplugin marketplace add JawsomeJason/jstack\nplugin install jstack@jstack -s user\nplugin list --json\nplugin marketplace list --json\n',
+    'plugin list --json\nplugin marketplace list --json\nplugin marketplace add JawsomeJason/jawsome-playbooks\nplugin install jawsome-playbooks@jawsome-playbooks -s user\nplugin list --json\nplugin marketplace list --json\n',
     r.stdout,
   );
   assert.equal(existsSync(join(w.home, '.local', 'bin', 'jstack-cli')), false);

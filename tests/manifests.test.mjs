@@ -7,7 +7,7 @@ const read = (path) => JSON.parse(readFileSync(new URL(`../${path}`, import.meta
 test('all five manifests carry the same version', () => {
   const versions = {
     '.claude-plugin/plugin.json': read('.claude-plugin/plugin.json').version,
-    '.claude-plugin/marketplace.json': read('.claude-plugin/marketplace.json').plugins.find((p) => p.name === 'jstack')?.version,
+    '.claude-plugin/marketplace.json': read('.claude-plugin/marketplace.json').plugins.find((p) => p.name === 'jawsome-playbooks')?.version,
     '.codex-plugin/plugin.json': read('.codex-plugin/plugin.json').version,
     '.muse-plugin/plugin.json': read('.muse-plugin/plugin.json').version,
     'package.json': read('package.json').version,
@@ -17,7 +17,7 @@ test('all five manifests carry the same version', () => {
   assert.deepEqual(versions, Object.fromEntries(Object.keys(versions).map((path) => [path, expected])));
 });
 
-test('the mode contract falls back to jstack-cli, and to poteto-mode only without either command', () => {
+test('the mode contract falls back to the deprecated jstack-cli, and to poteto-mode only without either command', () => {
   const contract = readFileSync(new URL('../skills/setup/references/mode-contract.md', import.meta.url), 'utf8');
   assert.match(contract, /`playbook` or `jstack-cli`, whichever is on `PATH`/);
   assert.match(contract, /When neither is on `PATH`, it follows poteto-mode as written/);

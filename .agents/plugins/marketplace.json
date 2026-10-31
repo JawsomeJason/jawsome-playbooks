@@ -1,11 +1,11 @@
 {
-  "name": "jstack",
+  "name": "jawsome-playbooks",
   "interface": {
-    "displayName": "jstack"
+    "displayName": "jawsome-playbooks"
   },
   "plugins": [
     {
-      "name": "jstack",
+      "name": "jawsome-playbooks",
       "source": {
         "source": "local",
         "path": "./"

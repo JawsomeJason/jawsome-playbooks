@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "jstack-cli playbook locate --json",
+  "title": "playbook locate --json",
   "description": "The step a quote names in the computed family, the files that wrote the quoted words, and the user file an edit to them belongs in.",
   "type": "object",
   "additionalProperties": false,

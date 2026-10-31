@@ -1,5 +1,5 @@
 {
-  "name": "jstack",
+  "name": "jawsome-playbooks",
   "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release.",
   "version": "0.7.0",
   "author": {

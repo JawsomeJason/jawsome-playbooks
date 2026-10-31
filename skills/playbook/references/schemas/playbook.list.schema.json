@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "jstack-cli playbook list --json",
+  "title": "playbook list --json",
   "description": "Every root active in the context, with its kind and the active members of its family.",
   "type": "object",
   "additionalProperties": false,

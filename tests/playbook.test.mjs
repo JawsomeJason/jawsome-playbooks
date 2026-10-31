@@ -607,7 +607,7 @@ test('a user file may extend a user standalone, whatever the order of their name
   assert.match(w.run(['playbook', 'show', 'zzz-flow']).stdout, /^2\. Then rest\. {3}\[aaa-flow\]$/m);
 });
 
-test('a pstack checker failure with no jstack problems says so in the last line', () => {
+test('a pstack checker failure with no playbook problems says so in the last line', () => {
   const w = world();
   const pstack = join(w.root, '1.0.0');
   cpSync(PSTACK, pstack, { recursive: true });
