@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const CLI = fileURLToPath(new URL('../skills/playbook/scripts/jstack.mjs', import.meta.url));
+export const CLI = fileURLToPath(new URL('../skills/playbook/scripts/playbook.mjs', import.meta.url));
 export const BIN = fileURLToPath(new URL('../bin/jstack-cli', import.meta.url));
 export const PLAYBOOK = fileURLToPath(new URL('../bin/playbook', import.meta.url));
 export const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
@@ -14,7 +14,7 @@ process.once('exit', () => {
   for (const dir of made) rmSync(dir, { recursive: true, force: true });
 });
 export const tempDir = () => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'jstack-test-')));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'playbooks-test-')));
   made.push(dir);
   return dir;
 };
@@ -90,11 +90,14 @@ export function world({ files = {}, team = {}, links = {}, remote = 'git@example
     const r = spawnSync(process.execPath, [CLI, ...args], {
       cwd,
       encoding: 'utf8',
-      env: { ...process.env, ...GIT_ENV, HOME: home, JSTACK_CONFIG: config, JSTACK_PSTACK_DIR: PSTACK, ...env },
+      env: withoutNulls({ ...process.env, ...GIT_ENV, HOME: home, PLAYBOOKS_CONFIG: config, PLAYBOOKS_PSTACK_DIR: PSTACK, ...env }),
     });
     return { status: r.status, stdout: r.stdout, stderr: r.stderr };
   };
   return { root, config, repo, home, outside, run };
 }
+
+/** The env with every key whose value is null removed, so a test can unset a variable the defaults set. */
+export const withoutNulls = (env) => Object.fromEntries(Object.entries(env).filter(([, v]) => v !== null));
 
 export const lines = (text) => text.split('\n').filter(Boolean);

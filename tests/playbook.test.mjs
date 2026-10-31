@@ -265,9 +265,39 @@ test('a layer key and the numbered config layout are retired, and check says wha
   assert.ok(out.includes(`${w.config}/01-user:1: numbered layer folders are retired; move each file into playbooks/ (playbooks/orgs/<org>/ or playbooks/repos/<repo>/ to limit where it applies) under a unique name, as playbooks.md describes`), out.join('\n'));
 });
 
+test('the config dir is ~/.jawsome-playbooks, and ~/.jstack is read only while the new one is missing, with an info line from check', () => {
+  const w = world();
+  const legacy = join(w.home, '.jstack');
+  renameSync(w.config, legacy);
+  const homeDefault = { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: null };
+  const old = w.run(['check'], { env: homeDefault });
+  assert.equal(old.status, 0, old.stdout + old.stderr);
+  assert.ok(lines(old.stdout).includes(`info: ${legacy}:1: ~/.jstack is the config dir from before 0.8.0 and is read until 0.9.0; move it to ~/.jawsome-playbooks`), old.stdout);
+  assert.match(w.run(['playbook', 'show', 'babysit'], { env: homeDefault }).stdout, /\[babysit-tester\]/);
+  cpSync(legacy, join(w.home, '.jawsome-playbooks'), { recursive: true });
+  writeFileSync(join(legacy, 'playbooks', 'broken.md'), '---\nextends: babysit\n---\n\n- A note.\n');
+  const current = w.run(['check'], { env: homeDefault });
+  assert.equal(current.status, 0, current.stdout);
+  assert.doesNotMatch(current.stdout, /\.jstack/);
+});
+
+test('the JSTACK_* names of the PLAYBOOKS_* variables still work, and the new names win', () => {
+  const w = world();
+  const expected = w.run(['playbook', 'show', 'babysit']).stdout;
+  assert.match(expected, /\[babysit-tester\]/);
+  const legacy = w.run(['playbook', 'show', 'babysit'], { env: { PLAYBOOKS_CONFIG: null, PLAYBOOKS_PSTACK_DIR: null, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK } });
+  assert.equal(legacy.stdout, expected, legacy.stderr);
+  const both = w.run(['playbook', 'show', 'babysit'], { env: { JSTACK_CONFIG: join(w.root, 'missing'), JSTACK_PSTACK_DIR: join(w.root, 'nothing') } });
+  assert.equal(both.stdout, expected, both.stderr);
+  writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...readLayers(w.config), telemetry: true }));
+  const state = join(w.root, 'state');
+  w.run(['playbook', 'show', 'babysit'], { env: { JSTACK_STATE: state } });
+  assert.equal(lines(readFileSync(join(state, 'usage.jsonl'), 'utf8')).length, 1);
+});
+
 test('with no config the playbook is pstack alone', () => {
   const w = world({ checkout: false });
-  const r = w.run(['playbook', 'compute', 'feature'], { env: { JSTACK_CONFIG: join(w.root, 'missing') } });
+  const r = w.run(['playbook', 'compute', 'feature'], { env: { PLAYBOOKS_CONFIG: join(w.root, 'missing') } });
   assert.equal(r.stdout, `# feature (pstack 1.0.0)
 
 1. Name the data shape.   [feature]
@@ -582,7 +612,7 @@ test('a pstack checker failure with no jstack problems says so in the last line'
   const pstack = join(w.root, '1.0.0');
   cpSync(PSTACK, pstack, { recursive: true });
   cpSync(join(FIXTURES, 'pstack/1.1.0/skills/poteto-mode/scripts'), join(pstack, 'skills/poteto-mode/scripts'), { recursive: true });
-  const r = w.run(['check'], { env: { JSTACK_PSTACK_DIR: pstack } });
+  const r = w.run(['check'], { env: { PLAYBOOKS_PSTACK_DIR: pstack } });
   assert.equal(lines(r.stdout).at(-1), "check failed: pstack's checker failed against pstack 1.0.0");
   assert.equal(r.status, 1);
 });
@@ -678,13 +708,13 @@ test('an https remote resolves owner and repo too', () => {
   assert.equal(r.stdout, BABYSIT);
 });
 
-test('without JSTACK_PSTACK_DIR the newest pstack under a home plugin cache wins by semver', () => {
+test('without PLAYBOOKS_PSTACK_DIR the newest pstack under a home plugin cache wins by semver', () => {
   const w = world();
   const cache = join(w.home, '.someharness', 'plugins', 'cache', 'market', 'pstack');
   mkdirSync(cache, { recursive: true });
   symlinkSync(join(FIXTURES, 'pstack', '1.0.0'), join(cache, '1.9.0'));
   symlinkSync(join(FIXTURES, 'pstack', '1.1.0'), join(cache, '1.10.0'));
-  const r = w.run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
+  const r = w.run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.10\.0\)$/m);
   assert.equal(r.status, 0);
 });
@@ -708,19 +738,19 @@ function cachedHome(recorded) {
   return w;
 }
 
-test('without JSTACK_PSTACK_DIR the install record picks the active pstack over a newer cached one', () => {
-  const r = cachedHome('1.9.0').run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
+test('without PLAYBOOKS_PSTACK_DIR the install record picks the active pstack over a newer cached one', () => {
+  const r = cachedHome('1.9.0').run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.9\.0\)$/m);
   assert.equal(r.status, 0);
 });
 
 test('an install record whose folder is gone falls back to the newest cached pstack', () => {
-  const r = cachedHome('1.8.0').run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
+  const r = cachedHome('1.8.0').run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.10\.0\)$/m);
   assert.equal(r.status, 0);
 });
 
-test('JSTACK_PSTACK_DIR wins over the install record', () => {
+test('PLAYBOOKS_PSTACK_DIR wins over the install record', () => {
   const r = cachedHome('1.9.0').run(['playbook', 'list']);
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.0\.0\)$/m);
   assert.equal(r.status, 0);
@@ -731,7 +761,7 @@ test('check records the pstack it used in a new config.json that has no pstack y
   const path = join(w.config, 'config.json');
   const { pstack, ...rest } = readLayers(w.config);
   writeFileSync(path, JSON.stringify(rest));
-  const r = w.run(['check'], { env: { JSTACK_PSTACK_DIR: '' } });
+  const r = w.run(['check'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stdout, /check passed: pstack 1\.9\.0$/m);
   assert.equal(readLayers(w.config).pstack, '1.9.0');
 });
@@ -750,7 +780,7 @@ function namedPstack(w, manifests) {
 test('a pstack folder whose name is no version takes its version from the plugin manifest', () => {
   for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json', '.muse-plugin/plugin.json', 'package.json']) {
     const w = world();
-    const env = { JSTACK_PSTACK_DIR: namedPstack(w, { [manifest]: { name: 'pstack', version: '2.3.4' } }) };
+    const env = { PLAYBOOKS_PSTACK_DIR: namedPstack(w, { [manifest]: { name: 'pstack', version: '2.3.4' } }) };
     assert.match(w.run(['playbook', 'list'], { env }).stdout, /^web \(acme-eng · pstack 2\.3\.4\)$/m, manifest);
     assert.match(w.run(['check'], { env }).stdout, /^check passed: pstack 2\.3\.4$/m, manifest);
     assert.equal(readLayers(w.config).pstack, '2.3.4', manifest);
@@ -760,7 +790,7 @@ test('a pstack folder whose name is no version takes its version from the plugin
 test('a pstack with no version anywhere is named by its path and never recorded', () => {
   const w = world();
   const dir = namedPstack(w, { '.claude-plugin/plugin.json': { name: 'pstack' } });
-  const env = { JSTACK_PSTACK_DIR: dir };
+  const env = { PLAYBOOKS_PSTACK_DIR: dir };
   assert.match(w.run(['playbook', 'list'], { env }).stdout, new RegExp(`^web \\(acme-eng · pstack ${dir}\\)$`, 'm'));
   const r = w.run(['check'], { env });
   assert.match(r.stdout, new RegExp(`^check passed: pstack ${dir}$`, 'm'));
@@ -770,8 +800,8 @@ test('a pstack with no version anywhere is named by its path and never recorded'
 });
 
 test('no pstack found is a usage error that names the variable to set', () => {
-  const r = world().run(['playbook', 'list'], { env: { JSTACK_PSTACK_DIR: '' } });
-  assert.match(r.stderr, /JSTACK_PSTACK_DIR/);
+  const r = world().run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
+  assert.match(r.stderr, /PLAYBOOKS_PSTACK_DIR/);
   assert.equal(r.status, 2);
 });
 
@@ -843,7 +873,7 @@ test('an unknown playbook and a bad command are usage errors', () => {
 test('bin/jstack-cli runs through a symlink placed on PATH', () => {
   const dir = tempDir();
   symlinkSync(BIN, join(dir, 'jstack-cli'));
-  const r = spawnSync(join(dir, 'jstack-cli'), ['--help'], { encoding: 'utf8', env: { ...process.env, JSTACK_PSTACK_DIR: PSTACK } });
+  const r = spawnSync(join(dir, 'jstack-cli'), ['--help'], { encoding: 'utf8', env: { ...process.env, PLAYBOOKS_PSTACK_DIR: PSTACK } });
   assert.match(r.stdout, /usage: jstack-cli/);
   assert.equal(r.status, 0);
 });
@@ -852,12 +882,12 @@ test('compute logs one line per read only when telemetry is on', () => {
   const w = world();
   const state = join(w.root, 'state');
   const log = join(state, 'usage.jsonl');
-  w.run(['playbook', 'compute', 'babysit'], { env: { JSTACK_STATE: state } });
+  w.run(['playbook', 'compute', 'babysit'], { env: { PLAYBOOKS_STATE: state } });
   assert.equal(existsSync(log), false, 'telemetry is off by default');
   writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...readLayers(w.config), telemetry: true }));
-  w.run(['playbook', 'compute', 'babysit'], { env: { JSTACK_STATE: state } });
-  w.run(['playbook', 'compute', 'triage', '--json'], { env: { JSTACK_STATE: state } });
-  w.run(['playbook', 'compute', 'no-such-playbook'], { env: { JSTACK_STATE: state } });
+  w.run(['playbook', 'compute', 'babysit'], { env: { PLAYBOOKS_STATE: state } });
+  w.run(['playbook', 'compute', 'triage', '--json'], { env: { PLAYBOOKS_STATE: state } });
+  w.run(['playbook', 'compute', 'no-such-playbook'], { env: { PLAYBOOKS_STATE: state } });
   const reads = lines(readFileSync(log, 'utf8')).map((l) => JSON.parse(l));
   assert.deepEqual(reads.map(({ playbook, repo, org, pstack }) => ({ playbook, repo, org, pstack })), [
     { playbook: 'babysit', repo: 'web', org: 'acme', pstack: '1.0.0' },
