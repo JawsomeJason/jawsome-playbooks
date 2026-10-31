@@ -1,6 +1,6 @@
 ---
 name: learn
-description: Turns what a session taught into proposed edits to the operator's jstack playbook files. Collects the operator's corrections and repeated instructions, finds the playbook step each one changes, picks the parent and file with playbook locate, and shows each edit line for the operator to pick before anything is written. Use when the operator says "learn from this", "update my playbooks", "what should my playbooks learn", "remember this for next time" about how a playbook runs, or after a correction that should hold in every later run. Prefer it over pstack's reflect when a lesson changes a playbook step, because reflect edits skills.
+description: Turns what a session taught into proposed edits to the operator's jawsome-playbooks playbook files. Collects the operator's corrections and repeated instructions, finds the playbook step each one changes, picks the parent and file with playbook locate, and shows each edit line for the operator to pick before anything is written. Use when the operator says "learn from this", "update my playbooks", "what should my playbooks learn", "remember this for next time" about how a playbook runs, or after a correction that should hold in every later run. Prefer it over pstack's reflect when a lesson changes a playbook step, because reflect edits skills.
 argument-hint: "[what to focus on]"
 compatibility: Requires Node, playbook, and the pstack plugin's poteto-mode skill.
 license: MIT
@@ -39,4 +39,4 @@ A correction the operator gives in one session is gone in the next unless it lan
 8. Run `playbook check`. When it fails on a line this run wrote, remove that line and report the failure. Then run `playbook show <playbook>` and show the changed step with its stem tags, so the operator sees the edit applied where they meant it.
 9. Report what was written, where, and what went elsewhere.
 
-When `playbook` is not on `PATH`, run `node scripts/jstack.mjs` from the `playbook` skill's folder instead. [The playbook reference](../playbook/references/cli.md#locate) describes `locate`, and [the playbooks page](../playbook/references/playbooks.md) gives the file format and the apply order.
+When `playbook` is not on `PATH`, run `node scripts/playbook.mjs` from the `playbook` skill's folder instead. [The playbook reference](../playbook/references/cli.md#locate) describes `locate`, and [the playbooks page](../playbook/references/playbooks.md) gives the file format and the apply order.

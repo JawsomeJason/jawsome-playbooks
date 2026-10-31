@@ -1,6 +1,6 @@
 ---
 name: playbook
-description: Lists, computes, and checks poteto-mode playbooks extended by team and personal files, with the playbook command (jstack-cli is its compatibility alias). show, also spelled compute, prints one playbook family with every file that extends it applied over pstack's bundled steps in extends order, tags each step with the file that wrote it, and names every override. locate names the step a quote finds and the file an edit to it belongs in. check validates every playbook file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `playbook show`, when writing or editing a playbook file, or after a pstack upgrade.
+description: Lists, computes, and checks poteto-mode playbooks extended by team and personal files, with the playbook command (jstack-cli is its deprecated alias). show, also spelled compute, prints one playbook family with every file that extends it applied over pstack's bundled steps in extends order, tags each step with the file that wrote it, and names every override. locate names the step a quote finds and the file an edit to it belongs in. check validates every playbook file against the installed pstack. Use when running a poteto-mode playbook through jawsome-playbooks, when a mode skill asks for `playbook show`, when writing or editing a playbook file, or after a pstack upgrade.
 argument-hint: "<list|show|compute|locate|extend|new|check|doctor> [playbook] [--repo <repo>]"
 compatibility: Requires Node and the pstack plugin's poteto-mode skill.
 license: MIT
@@ -8,11 +8,11 @@ license: MIT
 
 # Playbook
 
-jstack applies the operator's personal and team playbook files over pstack's bundled poteto-mode playbooks, in the order their `extends` chains give: parents first, team files before personal ones. This skill runs playbook and shows the result, so the agent copies one computed step list instead of merging files by hand, which drops or misplaces edits.
+jawsome-playbooks applies the operator's personal and team playbook files over pstack's bundled poteto-mode playbooks, in the order their `extends` chains give: parents first, team files before personal ones. This skill runs playbook and shows the result, so the agent copies one computed step list instead of merging files by hand, which drops or misplaces edits.
 
 ## Run it
 
-1. When `playbook` is on `PATH`, use it. `jstack-cli` is a compatibility alias that takes the same commands, and `compute` is an alias of `show`. Otherwise run `node scripts/jstack.mjs` from this skill's folder. Both run the same script, and the `PATH` copy is how the operator runs it in a terminal.
+1. When `playbook` is on `PATH`, use it. `jstack-cli` is a deprecated alias, removed in 0.9.0, that takes the same commands, and `compute` is an alias of `show`. Otherwise run `node scripts/playbook.mjs` from this skill's folder. Both run the same script, and the `PATH` copy is how the operator runs it in a terminal.
 2. Map the argument to a command:
 
    | Argument | Command |
@@ -25,10 +25,10 @@ jstack applies the operator's personal and team playbook files over pstack's bun
    | `check` | `playbook check` |
    | `doctor` | `playbook doctor` |
 
-3. When the argument includes `--repo <repo>`, pass it through. Without it, jstack-cli reads the repo from the current directory's checkout.
+3. When the argument includes `--repo <repo>`, pass it through. Without it, playbook reads the repo from the current directory's checkout.
 4. Print the output as it is. The operator reads the tags, the struck text, and the override list to see which file changed a step, so rewording them hides that.
 
-Exit code 1 means a validator problem. Report each problem line to the operator. Do not guess where an edit with a broken quote belongs, because a wrong guess applies a rule to the wrong step. Exit code 2 is a usage or setup error, and the message names the fix, such as setting `JSTACK_PSTACK_DIR`. [references/cli.md](references/cli.md) lists the commands, flags, environment variables, and exit codes.
+Exit code 1 means a validator problem. Report each problem line to the operator. Do not guess where an edit with a broken quote belongs, because a wrong guess applies a rule to the wrong step. Exit code 2 is a usage or setup error, and the message names the fix, such as setting `PLAYBOOKS_PSTACK_DIR`. [references/cli.md](references/cli.md) lists the commands, flags, environment variables, and exit codes.
 
 ## Run a computed playbook
 
@@ -48,4 +48,4 @@ Exit code 1 means a validator problem. Report each problem line to the operator.
 
 ## Keep the JSON shape
 
-`--json` output follows [jstack.compute](references/schemas/jstack.compute.schema.json), [jstack.list](references/schemas/jstack.list.schema.json), [jstack.locate](references/schemas/jstack.locate.schema.json), [jstack.check](references/schemas/jstack.check.schema.json), and [jstack.doctor](references/schemas/jstack.doctor.schema.json). When jstack-cli cannot run, produce the same shape by hand from [references/playbooks.md](references/playbooks.md), so a mode skill that reads it keeps working.
+`--json` output follows [playbook.compute](references/schemas/playbook.compute.schema.json), [playbook.list](references/schemas/playbook.list.schema.json), [playbook.locate](references/schemas/playbook.locate.schema.json), [playbook.check](references/schemas/playbook.check.schema.json), and [playbook.doctor](references/schemas/playbook.doctor.schema.json). When playbook cannot run, produce the same shape by hand from [references/playbooks.md](references/playbooks.md), so a mode skill that reads it keeps working.

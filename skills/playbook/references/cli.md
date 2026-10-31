@@ -11,7 +11,7 @@ playbook doctor [--fix | --json]
 playbook --help
 ```
 
-playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/playbook` and `bin/jstack-cli` import the script, so one symlink each puts the commands on `PATH`. `show` is the main name of the command that prints a playbook, and `compute` stays as an alias of it. `jstack-cli` is a compatibility alias of `playbook`: it takes the same flags, and spells the playbook commands `jstack-cli playbook list|show|compute|locate|extend|new`, with `jstack-cli check` and `jstack-cli doctor` unchanged. The command is `playbook`, not `jstack`, because Java development kits install a `jstack` of their own that can shadow it on `PATH`.
+playbook is `scripts/playbook.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/playbook` imports the script, so one symlink puts the command on `PATH`. `show` is the main name of the command that prints a playbook, and `compute` stays as an alias of it. `bin/jstack-cli` is a deprecated alias of `playbook`, kept for 0.8.x and removed in 0.9.0: it takes the same flags, and spells the playbook commands `jstack-cli playbook list|show|compute|locate|extend|new`, with `jstack-cli check` and `jstack-cli doctor` unchanged.
 
 `--help` and `-h` print the usage and exit 0. Any other word in place of a command, such as `help`, prints the usage and exits 2.
 
@@ -19,7 +19,7 @@ playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. 
 
 | Option | Effect |
 | --- | --- |
-| `--repo <repo>` | Sets the repo key. When it differs from the current checkout's key, jstack-cli reads the team files of the checkout `config.json` records for that repo, or none when it records no checkout. |
+| `--repo <repo>` | Sets the repo key. When it differs from the current checkout's key, playbook reads the team files of the checkout `config.json` records for that repo, or none when it records no checkout. |
 | `--every-repo` | `check` only. Checks with no repo and in each repo `config.json` records, and prints one report in the same shape. It never records a version, because it reads several contexts' files. |
 | `--json` | Prints JSON that follows the command's schema in [schemas/](schemas/). |
 | `--scope everywhere\|org\|repo` | `extend` and `new` only. Where the new file is active. `everywhere` (the default) writes to `<config>/playbooks/`, `org` to `<config>/playbooks/orgs/<org>/`, and `repo` to `<config>/playbooks/repos/<repo>/`, for the org or repo of the current checkout. |
@@ -27,7 +27,7 @@ playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. 
 | `--when <sentence>` | `extend` when it creates a file, and `new`. The `when:` sentence. |
 | `--from-file <path\|->` | `new` only. The numbered steps, from a file or stdin. |
 | `--fix` | `doctor` only. Asks before each fix, then runs it. See [doctor](#doctor). |
-| `--pstack <dir-or-version>` | Uses that pstack instead of the one jstack-cli finds. It takes a folder, or a version next to the one in use or in any plugin cache. With this flag, jstack-cli never writes `config.json`, so you can preview an upgrade. |
+| `--pstack <dir-or-version>` | Uses that pstack instead of the one playbook finds. It takes a folder, or a version next to the one in use or in any plugin cache. With this flag, playbook never writes `config.json`, so you can preview an upgrade. |
 
 ## Exit codes
 
@@ -41,19 +41,21 @@ playbook is `scripts/jstack.mjs` in this skill. It needs Node and nothing else. 
 
 | Variable | Value | Default |
 | --- | --- | --- |
-| `JSTACK_CONFIG` | The config dir. | `.jstack` in the home directory. |
-| `JSTACK_PSTACK_DIR` | The pstack plugin folder, the one that holds `skills/poteto-mode/`. | The search order below. |
-| `JSTACK_STATE` | The folder that holds `usage.jsonl`, the read log that `telemetry` turns on. | `jstack` in `$XDG_STATE_HOME`, else in `.local/state` in the home directory. |
+| `PLAYBOOKS_CONFIG` | The config dir. | `.jawsome-playbooks` in the home directory. |
+| `PLAYBOOKS_PSTACK_DIR` | The pstack plugin folder, the one that holds `skills/poteto-mode/`. | The search order below. |
+| `PLAYBOOKS_STATE` | The folder that holds `usage.jsonl`, the read log that `telemetry` turns on. | `jawsome-playbooks` in `$XDG_STATE_HOME`, else in `.local/state` in the home directory. |
 
-jstack-cli picks the pstack folder in this order, and uses the first one that holds poteto-mode's playbooks:
+Until 0.9.0, each variable's `JSTACK_` name from before 0.8.0 still works, and a `PLAYBOOKS_` name that is set wins. Likewise, when `PLAYBOOKS_CONFIG` is unset and `.jawsome-playbooks` does not exist, playbook reads `.jstack` in the home directory, and `check` prints an info line saying to move it. The state folder falls back to `jstack` the same way.
 
-1. `JSTACK_PSTACK_DIR`.
-2. The install record. jstack-cli reads `plugins/installed_plugins.json` in every dot-folder of the home directory and takes the `installPath` of each `pstack@<marketplace>` entry that has no `projectPath`. When several qualify, the highest version by semver wins. A harness loads the version its record names, and its cache keeps older and newer versions next to it, so the record is what keeps jstack-cli on the pstack the session runs.
-3. The cache. jstack-cli looks in every dot-folder of the home directory for `plugins/cache/*/pstack/<version>/` and takes the highest version by semver. Codex has no install record and needs none. It keeps one version of each plugin in its cache and replaces it on each install, upgrade, or downgrade, so the cache names the version Codex runs.
+playbook picks the pstack folder in this order, and uses the first one that holds poteto-mode's playbooks:
 
-Both searches use the layout that plugin harnesses share, so they find pstack without naming any one harness. A pstack in any other place needs `JSTACK_PSTACK_DIR`.
+1. `PLAYBOOKS_PSTACK_DIR`.
+2. The install record. playbook reads `plugins/installed_plugins.json` in every dot-folder of the home directory and takes the `installPath` of each `pstack@<marketplace>` entry that has no `projectPath`. When several qualify, the highest version by semver wins. A harness loads the version its record names, and its cache keeps older and newer versions next to it, so the record is what keeps jstack-cli on the pstack the session runs.
+3. The cache. playbook looks in every dot-folder of the home directory for `plugins/cache/*/pstack/<version>/` and takes the highest version by semver. Codex has no install record and needs none. It keeps one version of each plugin in its cache and replaces it on each install, upgrade, or downgrade, so the cache names the version Codex runs.
 
-jstack-cli reads the version from the first of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `.muse-plugin/plugin.json`, and `package.json` in the pstack folder that has a semver `version`. Without one, it uses the folder name when that is a semver, as plugin caches name their folders. When neither gives a version, output names pstack by its path and `--json` gives `null`. jstack-cli then records nothing in `config.json`, because that field holds a version.
+Both searches use the layout that plugin harnesses share, so they find pstack without naming any one harness. A pstack in any other place needs `PLAYBOOKS_PSTACK_DIR`.
+
+playbook reads the version from the first of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `.muse-plugin/plugin.json`, and `package.json` in the pstack folder that has a semver `version`. Without one, it uses the folder name when that is a semver, as plugin caches name their folders. When neither gives a version, output names pstack by its path and `--json` gives `null`. jstack-cli then records nothing in `config.json`, because that field holds a version.
 
 ## compute
 
@@ -81,11 +83,11 @@ When a file in the family has a problem, `compute` withholds the playbook: it pr
 
 A file with an `extends` stem that no context defines edits nothing, and any playbook may be the one it meant. So `compute` of every playbook lists that file's problems and exits 1. It still prints the steps of a playbook the file does not touch, under a line that says they may be incomplete. With `--json`, the steps stay and `problems` carries the file's problems.
 
-`pstack check-playbooks:` comes last, with pstack's own checker result, or `ok`. `--json` prints the same data, shaped by [schemas/jstack.compute.schema.json](schemas/jstack.compute.schema.json).
+`pstack check-playbooks:` comes last, with pstack's own checker result, or `ok`. `--json` prints the same data, shaped by [schemas/playbook.compute.schema.json](schemas/playbook.compute.schema.json).
 
 When the installed pstack differs from the `pstack` in `config.json`, `compute` runs `check` first. A pass records the new version. A failure stops with exit 1, because an upgrade that moved the quoted text would otherwise apply edits in the wrong place.
 
-With `"telemetry": true` in `config.json`, `compute` appends one JSON line per playbook it finds to `usage.jsonl` in `JSTACK_STATE`: `ts`, `playbook`, `repo`, `org`, and `pstack`. The log stays on the machine, and a tool such as a usage counter reads it to tell which playbooks agents run. A failed write never fails the compute, because a read log must not block the work it records.
+With `"telemetry": true` in `config.json`, `compute` appends one JSON line per playbook it finds to `usage.jsonl` in `PLAYBOOKS_STATE`: `ts`, `playbook`, `repo`, `org`, and `pstack`. The log stays on the machine, and a tool such as a usage counter reads it to tell which playbooks agents run. A failed write never fails the compute, because a read log must not block the work it records.
 
 ## locate
 
@@ -97,12 +99,12 @@ With `"telemetry": true` in `config.json`, `compute` appends one JSON line per p
 **Work the merge frontier.** The lowest open PR matters first.   [babysit]
 
 babysit wrote the quoted words. Write the edit in:
-- /home/sam/.jstack/playbooks/babysit-sam.md (exists), extending babysit
+- /home/sam/.jawsome-playbooks/playbooks/babysit-sam.md (exists), extending babysit
 ```
 
 A file's quotes see only what its ancestors wrote, so the new edit must extend the file that wrote the words. When several files wrote them, `locate` drops any that another writer descends from, and the file extends the rest. The suggested file is `<writer>-<handle>` in `playbooks/`. When one user file wrote the words, the line names that file with `exists; it wrote these words, so change its text there`, because an edit line cannot anchor on its own file's text.
 
-A quote that names no step or more than one prints the same message `check` prints and exits 1. `--json` follows [schemas/jstack.locate.schema.json](schemas/jstack.locate.schema.json).
+A quote that names no step or more than one prints the same message `check` prints and exits 1. `--json` follows [schemas/playbook.locate.schema.json](schemas/playbook.locate.schema.json).
 
 ## extend
 
@@ -119,7 +121,7 @@ TEXT
 - Before writing, the quote must match exactly one step in the text the parent and its ancestors wrote, the text the new file's quotes will see. On none or several, `extend` names the problem and the matching steps, writes nothing, and exits 1. When another file wrote the words, the message names it, so it can become a second parent.
 - After writing, `extend` runs the same validation as `check` in every context: no repo, plus every repo in `config.json`'s `repos`. A user file can change the text another file quotes, or take a name another repo uses, so a write that passes where it runs can still break another repo. A recorded repo is read from its checkout when the checkout exists. If the write added a problem, it puts the prior bytes back, or removes the file it created, prints the new problems, and exits 1. A problem that was already there never refuses a write, so it cannot block an unrelated edit or its own repair. `extend` prints it after the changed step instead.
 - On success it prints the path and the changed step with its stem tags.
-- Writes follow `JSTACK_CONFIG`. `extend` and `new` never write under `.agents/`, because team changes go through a pull request.
+- Writes follow `PLAYBOOKS_CONFIG`. `extend` and `new` never write under `.agents/`, because team changes go through a pull request.
 
 ## new
 
@@ -127,7 +129,7 @@ TEXT
 
 ## list
 
-`list` prints each root active in the context, with its kind (`pstack`, `team` or `user`) and the active members of its family in apply order. `--json` follows [schemas/jstack.list.schema.json](schemas/jstack.list.schema.json).
+`list` prints each root active in the context, with its kind (`pstack`, `team` or `user`) and the active members of its family in apply order. `--json` follows [schemas/playbook.list.schema.json](schemas/playbook.list.schema.json).
 
 ## check
 
@@ -169,7 +171,7 @@ These print `info:` lines and do not fail the check:
 
 `check` reads team stems from every checkout in `config.json` `repos`, so missing and dormant results are the same from any directory.
 
-`check` ends with `check passed: pstack <ver>` or `check failed: ...`. `--json` follows [schemas/jstack.check.schema.json](schemas/jstack.check.schema.json). Without `--pstack`, a pass records the checked version in `config.json` when that file exists.
+`check` ends with `check passed: pstack <ver>` or `check failed: ...`. `--json` follows [schemas/playbook.check.schema.json](schemas/playbook.check.schema.json). Without `--pstack`, a pass records the checked version in `config.json` when that file exists.
 
 ## doctor
 
@@ -177,9 +179,9 @@ These print `info:` lines and do not fail the check:
 
 | Check | Passes when |
 | --- | --- |
-| pstack-claude | jstack-cli finds a pstack, by the search order under [Environment](#environment). The line names the version and folder. |
-| jstack plugin | `claude plugin list --json` lists a `jstack@` plugin. Without `claude` on `PATH`, an `installed_plugins.json` in a dot-folder of the home directory lists one. |
-| cli | Both `jstack-cli` and `playbook` on `PATH` resolve to a jstack `bin/` script. Each is one line. A missing `jstack-cli` link fails. A missing `playbook` link prints a `-` line with its `ln -s` command when `jstack-cli` passes, because `jstack-cli` takes every command, and fails otherwise. A `jstack` on `PATH` that is not jstack's, such as Java's, prints a `-` line. |
+| pstack-claude | playbook finds a pstack, by the search order under [Environment](#environment). The line names the version and folder. |
+| jawsome-playbooks plugin | `claude plugin list --json` lists a `jawsome-playbooks@` plugin. Without `claude` on `PATH`, an `installed_plugins.json` in a dot-folder of the home directory lists one. |
+| cli | `playbook` on `PATH`, and its deprecated alias `jstack-cli`, resolve to a jawsome-playbooks `bin/` script. Each is one line. A missing `playbook` link fails. A missing `jstack-cli` link prints a `-` line with its `ln -s` command, because the alias is removed in 0.9.0. |
 | config | The config dir exists, and `config.json` parses and has a `handle`. |
 | mode skill | `<config>/mode/<handle>-mode/SKILL.md` exists, and a `skills` folder in a dot-folder of the home directory links to it. |
 | each repo | For each repo in `config.json` `repos`, the checkout's `.agents/playbooks` is a folder that git tracks. An untracked folder prints a `-` line, because only the operator sees it. A missing folder prints a `-` line. A link into the config dir, the retired layout, fails with an `rm` command shown as advice. |
@@ -192,10 +194,10 @@ doctor writes nothing without `--fix`. It runs `check` with `--pstack` set to th
 The fixes depend on the harness:
 
 - With `claude` on `PATH`, a missing plugin gets Claude Code's install commands from the README's tables. doctor leaves out `claude plugin marketplace add` when `claude plugin marketplace list --json` already lists that marketplace.
-- Without `claude`, doctor prints the row of every harness from the README's table for that install step. jstack cannot run another harness's installer.
+- Without `claude`, doctor prints the row of every harness from the README's table for that install step. jawsome-playbooks cannot run another harness's installer.
 - A missing command link gets an `ln -s` command.
 - A fix that would replace a file prints as advice, such as `move <path> aside, then: ln -s ...`, because the file in the way may be the operator's own work.
 
 `--fix` prints the report, then asks `run these? [y/N]` for each `✗` or `-` line that has a command to run, and runs that check's commands on `y`. It runs only `claude plugin` commands, `mkdir -p`, and `ln -s` to a path that does not exist. A fix never copies files into a plugin cache, because a harness loads only the version its install record names. When stdin is not a terminal, `--fix` prints `fixes not run: no terminal to ask on` and runs nothing. After the fixes, doctor runs every check again and prints the new report under `after fixes:`.
 
-`--json` prints the findings, shaped by [schemas/jstack.doctor.schema.json](schemas/jstack.doctor.schema.json).
+`--json` prints the findings, shaped by [schemas/playbook.doctor.schema.json](schemas/playbook.doctor.schema.json).
