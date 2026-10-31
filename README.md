@@ -15,6 +15,7 @@ The hooks have known gaps. A Bash command can still write a layer file (`sed -i`
 - The [playbook reference](skills/playbook/references/cli.md) lists the commands, flags, exit codes, and environment variables.
 - [Layers, files, and the cascade](skills/playbook/references/layers.md) describes the config dir, the layer file format, and how layers apply.
 - [CONTRIBUTING.md](CONTRIBUTING.md) lists the checks and the rules for changes.
+- [GLOSSARY.md](GLOSSARY.md) defines the terms these docs use and says which of upstream pstack, pstack-claude or jstack each comes from.
 
 ## Install and set up jstack
 
