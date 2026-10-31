@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-const JSTACK_README = join(dirname(fileURLToPath(import.meta.url)), '..', 'README.md');
+const README = join(dirname(fileURLToPath(import.meta.url)), '..', 'README.md');
 const INSTALL_STEPS = 5;
 
 function pstackReadmePath() {
@@ -59,7 +59,7 @@ test('every install step has one harness table naming each harness pstack-claude
   skip: pstackReadme ? false : 'no pstack-claude README: set PSTACK_CLAUDE_README or install pstack-claude so $HOME/.*/plugins/marketplaces/pstack-claude/README.md exists',
 }, () => {
   const harnesses = pstackHarnesses(readFileSync(pstackReadme, 'utf8'));
-  const tables = stepTables(readFileSync(JSTACK_README, 'utf8'));
+  const tables = stepTables(readFileSync(README, 'utf8'));
   const problems = [];
   for (let step = 1; step <= INSTALL_STEPS; step++) {
     const rows = tables.get(step);

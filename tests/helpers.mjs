@@ -5,7 +5,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const CLI = fileURLToPath(new URL('../skills/playbook/scripts/playbook.mjs', import.meta.url));
-export const BIN = fileURLToPath(new URL('../bin/jstack-cli', import.meta.url));
 export const PLAYBOOK = fileURLToPath(new URL('../bin/playbook', import.meta.url));
 export const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 

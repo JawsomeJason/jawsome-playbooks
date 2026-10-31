@@ -1,6 +1,6 @@
 ---
 name: playbook
-description: Lists, computes, and checks poteto-mode playbooks extended by team and personal files, with the playbook command (jstack-cli is its deprecated alias). show, also spelled compute, prints one playbook family with every file that extends it applied over pstack's bundled steps in extends order, tags each step with the file that wrote it, and names every override. locate names the step a quote finds and the file an edit to it belongs in. check validates every playbook file against the installed pstack. Use when running a poteto-mode playbook through jawsome-playbooks, when a mode skill asks for `playbook show`, when writing or editing a playbook file, or after a pstack upgrade.
+description: Lists, computes, and checks poteto-mode playbooks extended by team and personal files, with the playbook command. show, also spelled compute, prints one playbook family with every file that extends it applied over pstack's bundled steps in extends order, tags each step with the file that wrote it, and names every override. locate names the step a quote finds and the file an edit to it belongs in. check validates every playbook file against the installed pstack. Use when running a poteto-mode playbook through jawsome-playbooks, when a mode skill asks for `playbook show`, when writing or editing a playbook file, or after a pstack upgrade.
 argument-hint: "<list|show|compute|locate|extend|new|check|doctor> [playbook] [--repo <repo>]"
 compatibility: Requires Node and the pstack plugin's poteto-mode skill.
 license: MIT
@@ -12,7 +12,7 @@ jawsome-playbooks applies the operator's personal and team playbook files over p
 
 ## Run it
 
-1. When `playbook` is on `PATH`, use it. `jstack-cli` is a deprecated alias, removed in 0.9.0, that takes the same commands, and `compute` is an alias of `show`. Otherwise run `node scripts/playbook.mjs` from this skill's folder. Both run the same script, and the `PATH` copy is how the operator runs it in a terminal.
+1. When `playbook` is on `PATH`, use it. `compute` is an alias of `show`. Otherwise run `node scripts/playbook.mjs` from this skill's folder. Both run the same script, and the `PATH` copy is how the operator runs it in a terminal.
 2. Map the argument to a command:
 
    | Argument | Command |

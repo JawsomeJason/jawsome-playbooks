@@ -1,6 +1,6 @@
 # jawsome-playbooks
 
-jawsome-playbooks, called jstack before 0.8.0, extends team playbooks with personal ones, over pstack's bundled poteto-mode playbooks. Each file names the playbook it changes in `extends`, as pstack-claude's project playbooks do, and those chains set the order: parents first, team files before personal ones. `playbook` prints each playbook with every file that extends it applied, tags each step with the file that wrote it, and lists every override. An agent runs one step list, and you see whose rule changed which step.
+jawsome-playbooks extends team playbooks with personal ones, over pstack's bundled poteto-mode playbooks. Each file names the playbook it changes in `extends`, as pstack-claude's project playbooks do, and those chains set the order: parents first, team files before personal ones. `playbook` prints each playbook with every file that extends it applied, tags each step with the file that wrote it, and lists every override. An agent runs one step list, and you see whose rule changed which step.
 
 jawsome-playbooks keeps pstack's playbook format and edit grammar, adds no verbs, and never pins a pstack version. After a pstack upgrade, `playbook check` names each quote that no longer matches its step.
 
@@ -10,7 +10,7 @@ In Claude Code, the plugin's hook stops an agent from reading an installed pstac
 
 A second hook blocks a direct Edit or Write of a top-level `.md` file, other than a `README.md`, in `playbooks/`, `playbooks/orgs/*/` or `playbooks/repos/*/` of your config dir, resolving symlinks, and names `playbook extend` and `playbook new` instead. Those commands accept only valid grammar and undo a write that adds a `playbook check` problem. The hook allows a direct edit of a file that has a `check` problem, so a stale quote can always be repaired, and it allows the edit and says so when `check` cannot run. Set `PLAYBOOKS_ALLOW_EDITS=1` to edit by hand anyway. The `learn` skill writes personal files through the commands, so the hook does not stop it.
 
-The hooks have known gaps. A Bash command can still write a playbook file (`sed -i`, `tee`, a redirect) or read a bundled playbook that mentions `jstack-cli`, `playbook.mjs` or `playbook show` anywhere in the command. The read hook covers Read and Bash only, so Grep and Glob can still read a bundled playbook. Other harnesses have no hooks.
+The hooks have known gaps. A Bash command can still write a playbook file (`sed -i`, `tee`, a redirect) or read a bundled playbook that mentions `playbook.mjs` or `playbook show` anywhere in the command. The read hook covers Read and Bash only, so Grep and Glob can still read a bundled playbook. Other harnesses have no hooks.
 
 - The [playbook reference](skills/playbook/references/cli.md) lists the commands, flags, exit codes, and environment variables.
 - [Playbook files, families, and order](skills/playbook/references/playbooks.md) describes where files live, their format and names, the order they apply in, and what `check` validates, each rule marked with the project that provides it.
@@ -24,7 +24,7 @@ jawsome-playbooks needs Node, git, and [pstack-claude](https://github.com/michae
 
 Each step has one row per harness that pstack-claude supports, in the order its README lists them. `tests/readme-harnesses.test.mjs` fails when a step leaves one out.
 
-The **Checked** column says what someone ran. The Claude Code, Codex, Pi, and Muse rows come from installs into a throwaway home directory from a local jawsome-playbooks checkout, with Claude Code 2.1.312, codex-cli 0.154.0, pi 0.85.1, and Muse Code 1.4.12. GitHub Copilot, OpenCode, Gemini CLI, and Prime Agent are untested. Their rows follow pstack-claude's notes for each harness, and nobody has run them with jstack. No harness has run the `setup` skill end to end.
+The **Checked** column says what someone ran. The Claude Code, Codex, Pi, and Muse rows come from installs into a throwaway home directory from a local jawsome-playbooks checkout, with Claude Code 2.1.312, codex-cli 0.154.0, pi 0.85.1, and Muse Code 1.4.12. GitHub Copilot, OpenCode, Gemini CLI, and Prime Agent are untested. Their rows follow pstack-claude's notes for each harness, and nobody has run them with jawsome-playbooks. No harness has run the `setup` skill end to end.
 
 ### 1. Install pstack-claude
 
@@ -68,8 +68,6 @@ ln -s <path from the table> "$HOME/.local/bin/playbook"
 
 Link from a folder that updates in place. A link into a versioned cache folder keeps pointing at the old version after an update.
 
-`jstack-cli` is a deprecated alias of `playbook`, kept for 0.8.x and removed in 0.9.0. It takes the same commands, spelled `jstack-cli playbook show` and so on, so older scripts and mode skills keep working. Link `bin/jstack-cli` from the same folder only while something still calls it.
-
 | Harness | Path to link | Checked |
 | --- | --- | --- |
 | Claude Code | `$HOME/.claude/plugins/marketplaces/jawsome-playbooks/bin/playbook`, the marketplace clone that plugin updates refresh | Yes |
@@ -112,16 +110,6 @@ After setup, start a new session, so the harness loads `/<handle>-mode`. To chec
 | OpenCode | Ask the agent to run the `setup` skill by name. pstack-claude says these harnesses have no routing hook, so you name the skill. | Untested |
 | Gemini CLI | The same as OpenCode | Untested |
 | Prime Agent | The same as OpenCode | Untested |
-
-## Renamed from jstack
-
-0.8.0 renamed jstack to jawsome-playbooks. The old names keep working through 0.8.x and stop in 0.9.0. To move over:
-
-1. Reinstall the plugin: `claude plugin uninstall jstack@jstack`, `claude plugin marketplace remove jstack`, then the step 2 commands. GitHub redirects `JawsomeJason/jstack` to the new repo.
-2. Move the config dir: `mv ~/.jstack ~/.jawsome-playbooks`. Until 0.9.0, playbook reads `~/.jstack` when `~/.jawsome-playbooks` does not exist, and `playbook check` prints an info line saying so.
-3. Rename the environment variables: `JSTACK_CONFIG`, `JSTACK_PSTACK_DIR` and `JSTACK_STATE` become `PLAYBOOKS_CONFIG`, `PLAYBOOKS_PSTACK_DIR` and `PLAYBOOKS_STATE`, and `JSTACK_ALLOW_PLAYBOOK_EDITS` becomes `PLAYBOOKS_ALLOW_EDITS`. A `PLAYBOOKS_` name wins when both are set.
-4. Relink `playbook` from the new install path in step 3, and change scripts and mode skills that call `jstack-cli` to call `playbook`. `jstack-cli` is a deprecated alias until 0.9.0.
-5. Change skill names: `jstack:playbook`, `jstack:setup` and `jstack:learn` become `jawsome-playbooks:playbook`, `jawsome-playbooks:setup` and `jawsome-playbooks:learn`.
 
 ## Credits
 

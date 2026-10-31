@@ -23,7 +23,7 @@ test('layer files, pstack checkouts, listings and playbook itself pass', () => {
     ['Read', { file_path: '/home/sam/.jawsome-playbooks/playbooks/feature-sam.md' }],
     ['Read', { file_path: '/home/sam/code/pstack/skills/poteto-mode/playbooks/feature.md' }],
     ['Bash', { command: 'ls /home/sam/.claude/plugins/cache/pstack-claude/pstack/1.0.0/skills/poteto-mode/playbooks/' }],
-    ['Bash', { command: `PLAYBOOKS_PSTACK_DIR=x jstack-cli check # ${BUNDLED}` }],
+    ['Bash', { command: `PLAYBOOKS_PSTACK_DIR=x playbook check # ${BUNDLED}` }],
     ['Bash', { command: `playbook show feature # ${BUNDLED}` }],
     ['Edit', { file_path: BUNDLED }],
   ]) {
@@ -64,14 +64,14 @@ test('edit hook blocks an Edit of a user playbook file in any scope, through a s
   }
 });
 
-test('edit hook reads the JSTACK_* names of its variables until 0.9.0, and ~/.jstack while ~/.jawsome-playbooks is missing', () => {
+test('edit hook ignores the JSTACK_* names of its variables and the ~/.jstack folder from before 0.8.0', () => {
   const w = world();
   const file = join(w.config, 'playbooks/babysit-tester.md');
-  assert.equal(editHook(w, file, { JSTACK_ALLOW_PLAYBOOK_EDITS: '1' }).status, 0);
-  assert.equal(editHook(w, file, { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: w.config }).status, 2);
+  assert.equal(editHook(w, file, { JSTACK_ALLOW_PLAYBOOK_EDITS: '1' }).status, 2);
+  assert.equal(editHook(w, file, { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: w.config }).status, 0);
   const legacy = join(w.home, '.jstack');
   renameSync(w.config, legacy);
-  assert.equal(editHook(w, join(legacy, 'playbooks/babysit-tester.md'), { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: null }).status, 2);
+  assert.equal(editHook(w, join(legacy, 'playbooks/babysit-tester.md'), { PLAYBOOKS_CONFIG: null }).status, 0);
 });
 
 test('edit hook allows a direct edit of a file that has a check problem, and only that file', () => {

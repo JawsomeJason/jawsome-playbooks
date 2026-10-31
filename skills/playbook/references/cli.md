@@ -11,7 +11,7 @@ playbook doctor [--fix | --json]
 playbook --help
 ```
 
-playbook is `scripts/playbook.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/playbook` imports the script, so one symlink puts the command on `PATH`. `show` is the main name of the command that prints a playbook, and `compute` stays as an alias of it. `bin/jstack-cli` is a deprecated alias of `playbook`, kept for 0.8.x and removed in 0.9.0: it takes the same flags, and spells the playbook commands `jstack-cli playbook list|show|compute|locate|extend|new`, with `jstack-cli check` and `jstack-cli doctor` unchanged.
+playbook is `scripts/playbook.mjs` in this skill. It needs Node and nothing else. The plugin's `bin/playbook` imports the script, so one symlink puts the command on `PATH`. `show` is the main name of the command that prints a playbook, and `compute` stays as an alias of it.
 
 `--help` and `-h` print the usage and exit 0. Any other word in place of a command, such as `help`, prints the usage and exits 2.
 
@@ -45,17 +45,15 @@ playbook is `scripts/playbook.mjs` in this skill. It needs Node and nothing else
 | `PLAYBOOKS_PSTACK_DIR` | The pstack plugin folder, the one that holds `skills/poteto-mode/`. | The search order below. |
 | `PLAYBOOKS_STATE` | The folder that holds `usage.jsonl`, the read log that `telemetry` turns on. | `jawsome-playbooks` in `$XDG_STATE_HOME`, else in `.local/state` in the home directory. |
 
-Until 0.9.0, each variable's `JSTACK_` name from before 0.8.0 still works, and a `PLAYBOOKS_` name that is set wins. Likewise, when `PLAYBOOKS_CONFIG` is unset and `.jawsome-playbooks` does not exist, playbook reads `.jstack` in the home directory, and `check` prints an info line saying to move it. The state folder falls back to `jstack` the same way.
-
 playbook picks the pstack folder in this order, and uses the first one that holds poteto-mode's playbooks:
 
 1. `PLAYBOOKS_PSTACK_DIR`.
-2. The install record. playbook reads `plugins/installed_plugins.json` in every dot-folder of the home directory and takes the `installPath` of each `pstack@<marketplace>` entry that has no `projectPath`. When several qualify, the highest version by semver wins. A harness loads the version its record names, and its cache keeps older and newer versions next to it, so the record is what keeps jstack-cli on the pstack the session runs.
+2. The install record. playbook reads `plugins/installed_plugins.json` in every dot-folder of the home directory and takes the `installPath` of each `pstack@<marketplace>` entry that has no `projectPath`. When several qualify, the highest version by semver wins. A harness loads the version its record names, and its cache keeps older and newer versions next to it, so the record is what keeps playbook on the pstack the session runs.
 3. The cache. playbook looks in every dot-folder of the home directory for `plugins/cache/*/pstack/<version>/` and takes the highest version by semver. Codex has no install record and needs none. It keeps one version of each plugin in its cache and replaces it on each install, upgrade, or downgrade, so the cache names the version Codex runs.
 
 Both searches use the layout that plugin harnesses share, so they find pstack without naming any one harness. A pstack in any other place needs `PLAYBOOKS_PSTACK_DIR`.
 
-playbook reads the version from the first of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `.muse-plugin/plugin.json`, and `package.json` in the pstack folder that has a semver `version`. Without one, it uses the folder name when that is a semver, as plugin caches name their folders. When neither gives a version, output names pstack by its path and `--json` gives `null`. jstack-cli then records nothing in `config.json`, because that field holds a version.
+playbook reads the version from the first of `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `.muse-plugin/plugin.json`, and `package.json` in the pstack folder that has a semver `version`. Without one, it uses the folder name when that is a semver, as plugin caches name their folders. When neither gives a version, output names pstack by its path and `--json` gives `null`. playbook then records nothing in `config.json`, because that field holds a version.
 
 ## compute
 
@@ -181,7 +179,7 @@ These print `info:` lines and do not fail the check:
 | --- | --- |
 | pstack-claude | playbook finds a pstack, by the search order under [Environment](#environment). The line names the version and folder. |
 | jawsome-playbooks plugin | `claude plugin list --json` lists a `jawsome-playbooks@` plugin. Without `claude` on `PATH`, an `installed_plugins.json` in a dot-folder of the home directory lists one. |
-| cli | `playbook` on `PATH`, and its deprecated alias `jstack-cli`, resolve to a jawsome-playbooks `bin/` script. Each is one line. A missing `playbook` link fails. A missing `jstack-cli` link prints a `-` line with its `ln -s` command, because the alias is removed in 0.9.0. |
+| cli | `playbook` on `PATH` resolves to a jawsome-playbooks `bin/` script. A missing link fails. |
 | config | The config dir exists, and `config.json` parses and has a `handle`. |
 | mode skill | `<config>/mode/<handle>-mode/SKILL.md` exists, and a `skills` folder in a dot-folder of the home directory links to it. |
 | each repo | For each repo in `config.json` `repos`, the checkout's `.agents/playbooks` is a folder that git tracks. An untracked folder prints a `-` line, because only the operator sees it. A missing folder prints a `-` line. A link into the config dir, the retired layout, fails with an `rm` command shown as advice. |

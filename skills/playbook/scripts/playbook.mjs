@@ -5,27 +5,16 @@ import { homedir } from 'node:os';
 import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// bin/playbook sets this before importing the script; jstack-cli, its alias until 0.9.0, and a direct run leave it unset.
-const BARE = globalThis.playbookBin === 'playbook';
 const WRITE_USAGE = `extend <parent> [<file-name>] after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--scope everywhere|org|repo] [--repo <repo>] [--pstack <dir-or-version>]`;
 const NEW_USAGE = 'new <name> --when <sentence> --from-file <path|-> [--scope everywhere|org|repo] [--repo <repo>] [--pstack <dir-or-version>]';
-const USAGE = BARE
-  ? `usage: playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
+const USAGE = `usage: playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook ${WRITE_USAGE}
        playbook ${NEW_USAGE}
        playbook check [--repo <repo> | --every-repo] [--json] [--pstack <dir-or-version>]
        playbook doctor [--fix | --json]
-       (compute is an alias of show; jstack-cli is a deprecated alias of playbook, removed in 0.9.0)`
-  : `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack-cli playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack-cli playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack-cli playbook ${WRITE_USAGE}
-       jstack-cli playbook ${NEW_USAGE}
-       jstack-cli check [--repo <repo> | --every-repo] [--json] [--pstack <dir-or-version>]
-       jstack-cli doctor [--fix | --json]
-       (deprecated alias of playbook, removed in 0.9.0; compute is an alias of show)`;
+       (compute is an alias of show)`;
 
 class UsageError extends Error {
   constructor(message, { usage = false } = {}) {
@@ -719,19 +708,15 @@ function resolvePstack(flag) {
   return pick;
 }
 
-/** PLAYBOOKS_<name>, or JSTACK_<name> until 0.9.0. A PLAYBOOKS_ name that is set wins, even when empty. */
-const envVar = (name) => process.env[`PLAYBOOKS_${name}`] ?? process.env[`JSTACK_${name}`];
-/** `current`, or `legacy` while only the folder from before 0.8.0 exists. */
-const currentOrLegacy = (current, legacy) => (!existsSync(current) && existsSync(legacy) ? legacy : current);
+const envVar = (name) => process.env[`PLAYBOOKS_${name}`];
 
-const LEGACY_CONFIG = () => join(homedir(), '.jstack');
 const configDirPath = () => {
   const env = envVar('CONFIG');
-  return env ? resolve(env) : currentOrLegacy(join(homedir(), '.jawsome-playbooks'), LEGACY_CONFIG());
+  return env ? resolve(env) : join(homedir(), '.jawsome-playbooks');
 };
 const usageLogPath = () => {
   const state = process.env.XDG_STATE_HOME || join(homedir(), '.local', 'state');
-  return join(envVar('STATE') || currentOrLegacy(join(state, 'jawsome-playbooks'), join(state, 'jstack')), 'usage.jsonl');
+  return join(envVar('STATE') || join(state, 'jawsome-playbooks'), 'usage.jsonl');
 };
 
 /** With `telemetry` on, one JSON line per computed playbook. A failed write never fails the compute. */
@@ -749,9 +734,6 @@ function loadContext(opts) {
   const configDir = configDirPath();
   const settings = readSettings(configDir);
   const configProblems = [];
-  const configInfo = configDir === LEGACY_CONFIG() && !envVar('CONFIG')
-    ? [{ path: configDir, line: 1, message: '~/.jstack is the config dir from before 0.8.0 and is read until 0.9.0; move it to ~/.jawsome-playbooks' }]
-    : [];
   if (settings?.raw.layers !== undefined) {
     configProblems.push({ path: settings.path, line: 1, message: '"layers" is retired: extends sets the order, so delete the key' });
   }
@@ -764,7 +746,7 @@ function loadContext(opts) {
   }
   const pstack = resolvePstack(opts.pstack);
   const repo = resolveRepo(opts, configDir, settings);
-  return { configDir, settings, configProblems, configInfo, pstack, repo, pinned: Boolean(opts.pstack) };
+  return { configDir, settings, configProblems, pstack, repo, pinned: Boolean(opts.pstack) };
 }
 
 /** One playbook file, team or user. `scope` is where it is active: a repo's checkout, everywhere, or one org or repo. */
@@ -952,7 +934,7 @@ function record(ctx) {
 function checkReport(ctx, analysis) {
   const files = analysis.files.all;
   const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems(files)];
-  const info = [...ctx.configInfo, ...fileProblems(files, 'info')];
+  const info = fileProblems(files, 'info');
   const passed = problems.length === 0 && analysis.pstackCheck.status !== 'failed';
   return { pstack: ctx.pstack.version, problems, info, pstackCheck: analysis.pstackCheck, passed };
 }
@@ -1425,7 +1407,7 @@ function checkPlugin(h) {
 function checkCommands(h) {
   const binDir = join(h.home, '.local', 'bin');
   const out = [];
-  for (const name of ['playbook', 'jstack-cli']) {
+  for (const name of ['playbook']) {
     const clone = join(h.home, '.claude', 'plugins', 'marketplaces', PLUGIN, 'bin', name);
     const source = h.claude && isFile(clone) ? clone : join(dirname(SELF_BIN), name);
     const dest = join(binDir, name);
@@ -1436,9 +1418,7 @@ function checkCommands(h) {
         ? []
         : [...(isDir(binDir) ? [] : [runFix(sh('mkdir', '-p', binDir))]), runFix(link)];
       if (!(process.env.PATH ?? '').split(delimiter).includes(binDir)) fixes.push(showFix(`add ${binDir} to PATH`));
-      // jstack-cli is a deprecated alias until 0.9.0, so a missing link to it only informs.
-      if (name === 'jstack-cli') out.push(finding('cli', 'info', 'jstack-cli, the deprecated alias of playbook until 0.9.0, is not on PATH', { fixes }));
-      else out.push(finding('cli', 'fail', `${name} is not on PATH`, { fixes }));
+      out.push(finding('cli', 'fail', `${name} is not on PATH`, { fixes }));
     } else if (!isOurs(found)) {
       out.push(finding('cli', 'fail', `${name} on PATH is ${found}, which is not jawsome-playbooks'`, { fixes: [showFix(`move ${found} aside, then: ${link}`)] }));
     } else {
@@ -1635,9 +1615,7 @@ function parseArgs(argv) {
   }
   if (opts.help) return { opts };
   const [head, ...rest] = words;
-  const grouped = BARE ? GROUP_VERBS.has(head) : head === 'playbook';
-  const verb = grouped ? (BARE ? head : rest.shift()) : head;
-  const command = COMMANDS[grouped ? `playbook ${VERB_ALIASES[verb] ?? verb}` : verb];
+  const command = COMMANDS[GROUP_VERBS.has(head) ? `playbook ${VERB_ALIASES[head] ?? head}` : head];
   const args = rest;
   if (!command || ![command.arity].flat().includes(args.length)) throw new UsageError('', { usage: true });
   if (!command.writes && WRITE_FLAGS.some((f) => opts[f] !== null)) throw new UsageError('', { usage: true });
