@@ -7,20 +7,22 @@ import { fileURLToPath } from 'node:url';
 
 // bin/playbook sets this before importing the script; jstack-cli and a direct run leave it unset.
 const BARE = globalThis.jstackBin === 'playbook';
+const WRITE_USAGE = `extend <parent> [<file-name>] after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--scope everywhere|org|repo] [--repo <repo>] [--pstack <dir-or-version>]`;
+const NEW_USAGE = 'new <name> --when <sentence> --from-file <path|-> [--scope everywhere|org|repo] [--repo <repo>] [--pstack <dir-or-version>]';
 const USAGE = BARE
   ? `usage: playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
-       playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
+       playbook ${WRITE_USAGE}
+       playbook ${NEW_USAGE}
        playbook check [--repo <repo> | --every-repo] [--json] [--pstack <dir-or-version>]
        playbook doctor [--fix | --json]
        (compute is an alias of show; jstack-cli is a compatibility alias of playbook)`
   : `usage: jstack-cli playbook list [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook show <name> [--repo <repo>] [--json] [--pstack <dir-or-version>]
        jstack-cli playbook locate <name> <quote> [--repo <repo>] [--json] [--pstack <dir-or-version>]
-       jstack-cli playbook extend <parent> <file-name> after|before|replace|in "<quote>" (--with <text|-> | --with-file <path>) [--when <sentence>] [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
-       jstack-cli playbook new <name> --when <sentence> --from-file <path|-> [--layer user|org|repo] [--repo <repo>] [--pstack <dir-or-version>]
+       jstack-cli playbook ${WRITE_USAGE}
+       jstack-cli playbook ${NEW_USAGE}
        jstack-cli check [--repo <repo> | --every-repo] [--json] [--pstack <dir-or-version>]
        jstack-cli doctor [--fix | --json]
        (compatibility alias of playbook; compute is an alias of show)`;
@@ -31,20 +33,16 @@ class UsageError extends Error {
   }
 }
 
-// Each folder's number is its rank among its siblings, so reading the config tree top to bottom is the cascade order.
-const DIR = { user: '01-user', orgs: '02-orgs', repos: '03-repos', standard: '01-standard', team: '01-team', overrides: '02-overrides' };
-const LEGACY_DIRS = { user: DIR.user, orgs: DIR.orgs, repos: DIR.repos };
-
-// `anywhere` is where a layer's files sit in the config dir for any org or repo, `*` standing for the org or repo.
-const LAYERS = {
-  user: { label: 'user', team: false, anywhere: DIR.user, dir: (c) => join(c.configDir, DIR.user) },
-  'org.standard': { label: 'org.std', team: true, anywhere: `${DIR.orgs}/*/${DIR.standard}` },
-  'org.overrides': { label: 'org.ovr', team: false, anywhere: `${DIR.orgs}/*/${DIR.overrides}`, dir: (c) => c.repo.org && join(c.configDir, DIR.orgs, c.repo.org, DIR.overrides) },
-  'repo.standard': { label: 'repo.std', team: true, anywhere: `${DIR.repos}/*/${DIR.team}` },
-  'repo.overrides': { label: 'repo.ovr', team: false, anywhere: `${DIR.repos}/*/${DIR.overrides}`, dir: (c) => c.repo.name && join(c.configDir, DIR.repos, c.repo.name, DIR.overrides) },
+// User files sit in playbooks/ (active everywhere) or a scope folder under it. A folder says where a file is active, never its order.
+const USER_DIR = 'playbooks';
+const SCOPES = {
+  everywhere: { dir: (c) => join(c.configDir, USER_DIR) },
+  org: { dir: (c) => c.repo.org && join(c.configDir, USER_DIR, 'orgs', c.repo.org) },
+  repo: { dir: (c) => c.repo.name && join(c.configDir, USER_DIR, 'repos', c.repo.name) },
 };
-const ORDER = Object.keys(LAYERS);
-const label = (layer) => LAYERS[layer]?.label ?? layer;
+// The numbered layout ordered layers by folder; extends orders files now, so these folders only mislead.
+const RETIRED_DIRS = ['01-user', '02-orgs', '03-repos', 'user', 'orgs', 'repos'];
+const TEAM_DIR = join('.agents', 'playbooks');
 
 const CHANGE = /^\s*(?:[-*]|\d+\.)\s+\*\*(After|Before|Replace|In)\*\*\s+"([^"]+)"[ \t]*(.*)$/;
 const CHANGE_VERB = /^\s*(?:[-*]|\d+\.)\s+\*\*(?:After|Before|Replace|In)\*\*/;
@@ -53,13 +51,13 @@ const NUMBERED_STEP = /^\d+\.\s(.*)$/;
 const HEADING = /^#{1,6}\s+(.+)$/;
 
 const FAILURES = {
-  ambiguous: { rank: 4, message: (quote, steps) => `quote matches steps ${andList(steps)}; make it longer` },
-  teamOnly: { rank: 3, message: () => 'team files may quote pstack only' },
+  ambiguous: { rank: 5, message: (quote, f) => `quote matches steps ${andList(f.steps)}; make it longer` },
+  teamOnly: { rank: 4, message: () => 'team files may quote pstack only' },
+  unseen: { rank: 3, message: (quote, f) => `quote not found in what its parents leave: "${quote}"; ${f.writer} wrote it, so add ${f.writer} to extends` },
   outside: { rank: 2, message: () => 'quote is outside a numbered step' },
   missing: { rank: 1, message: (quote) => `quote not found: "${quote}"` },
 };
-
-const CELLS = { defines: '●', edits: '+', none: '·' };
+const failure = (found, quote) => FAILURES[found.fail].message(quote, found);
 
 const isBlank = (line) => line.trim() === '';
 const andList = (items) => (items.length < 2 ? String(items[0]) : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
@@ -163,12 +161,16 @@ function parseLayerText(raw) {
   return { front, hasFront, edits, notes, malformed, prose, body: body.join('\n') };
 }
 
-let groups = 0;
-const segment = (text, layer, extra = {}) => ({ text, layer, struck: false, base: false, group: ++groups, replaces: new Set(), ...extra });
-const newStep = (text, origin) => ({ origin, touched: [], overrides: [], segments: [segment(text, origin, { base: true })] });
-const effective = (step) => step.segments.filter((s) => !s.struck).map((s) => s.text).join('');
-const original = (step) => step.segments.filter((s) => s.base).map((s) => s.text).join('');
-const display = (step) => step.segments.map((s) => (s.struck ? `~~${s.text}~~ ` : s.text)).join('');
+// A segment records the stem that wrote it and the stem whose Replace struck it, so each file can see only its ancestors' text.
+const segment = (text, writer) => ({ text, writer, struckBy: null });
+const newStep = (text, origin, kind) => ({ origin, kind, touched: [], overrides: [], afterOf: null, segments: [segment(text, origin)] });
+const effective = (step) => step.segments.filter((s) => !s.struckBy).map((s) => s.text).join('');
+const display = (step) => step.segments.map((s) => (s.struckBy ? `~~${s.text}~~ ` : s.text)).join('');
+const tags = (step) => `[${[step.origin, ...step.touched].join(' ~ ')}]`;
+
+/** What a file whose ancestors are `seen` reads in a step: its ancestors' segments, less what its ancestors struck. */
+const seenBy = (seen) => (s) => seen.has(s.writer) && !(s.struckBy && seen.has(s.struckBy));
+const viewText = (step, seen) => step.segments.filter(seenBy(seen)).map((s) => s.text).join('');
 
 /** Splits the segments `inSpan` selects at [start, end) of their joined text, returning the pieces inside. */
 function takeSpan(step, inSpan, start, end) {
@@ -195,122 +197,228 @@ function takeSpan(step, inSpan, start, end) {
   return taken;
 }
 
-/**
- * Strikes the quoted span and inserts the change after it. A team Replace whose words a lower layer already
- * replaced matches the step's original text instead, and strikes that lower replacement too.
- */
-function replaceSpan(step, edit, layer) {
-  const re = quoteRegex(edit.quote);
-  const live = re.exec(effective(step));
-  const m = live ?? re.exec(original(step));
-  const taken = takeSpan(step, live ? (s) => !s.struck : (s) => s.base, m.index, m.index + m[0].length);
-  const hit = new Set(taken.filter((s) => s.struck).map((s) => s.group));
-  const superseded = [];
-  for (let grew = true; grew; ) {
-    grew = false;
-    for (const s of step.segments) {
-      if (s.struck || ![...s.replaces].some((g) => hit.has(g))) continue;
-      s.struck = true;
-      hit.add(s.group);
-      superseded.push(s);
-      grew = true;
-    }
-  }
-  for (const s of taken) s.struck = true;
-  const last = Math.max(...[...taken, ...superseded].map((s) => step.segments.indexOf(s)));
-  step.segments.splice(last + 1, 0, segment(edit.text, layer, { replaces: new Set(taken.map((s) => s.group)) }));
-  return superseded.length ? { over: superseded.at(-1).layer } : {};
+/** Strikes the quoted span as `seen` reads it and inserts the change after it. Words a sibling already struck are a clash. */
+function replaceSpan(step, edit, stem, seen) {
+  const m = quoteRegex(edit.quote).exec(viewText(step, seen));
+  const taken = takeSpan(step, seenBy(seen), m.index, m.index + m[0].length);
+  const clash = taken.find((s) => s.struckBy)?.struckBy;
+  for (const s of taken) s.struckBy ??= stem;
+  const last = Math.max(...taken.map((s) => step.segments.indexOf(s)));
+  step.segments.splice(last + 1, 0, segment(edit.text, stem));
+  return clash ? { clash } : {};
 }
 
 const VERBS = {
-  After: { edits: false, apply: (pb, step, edit, layer) => pb.steps.splice(pb.steps.indexOf(step) + 1, 0, newStep(edit.text, layer)) },
-  Before: { edits: false, apply: (pb, step, edit, layer) => pb.steps.splice(pb.steps.indexOf(step), 0, newStep(edit.text, layer)) },
-  In: {
-    edits: true,
-    apply: (pb, step, edit, layer) => {
-      step.segments.push(segment(` ${edit.text}`, layer));
+  // A new After step lands after the steps earlier files put after the same anchor, so it reads in apply order.
+  After: {
+    edits: false,
+    apply: (pb, step, edit, file) => {
+      let at = pb.steps.indexOf(step) + 1;
+      while (pb.steps[at]?.afterOf === step) at++;
+      pb.steps.splice(at, 0, { ...newStep(edit.text, file.stem, file.kind), afterOf: step });
       return {};
     },
   },
-  Replace: { edits: true, apply: (pb, step, edit, layer) => replaceSpan(step, edit, layer) },
+  Before: { edits: false, apply: (pb, step, edit, file) => (pb.steps.splice(pb.steps.indexOf(step), 0, newStep(edit.text, file.stem, file.kind)), {}) },
+  In: { edits: true, apply: (pb, step, edit, file) => (step.segments.push(segment(` ${edit.text}`, file.stem)), {}) },
+  Replace: { edits: true, apply: (pb, step, edit, file, seen) => replaceSpan(step, edit, file.stem, seen) },
 };
 
-const makePlaybook = (name, origin, parsed) => {
-  const steps = parsed.steps.map((t) => newStep(t, origin));
-  return { name, origin, title: parsed.title, intro: parsed.intro, steps, bundled: origin === 'pstack' ? [...steps] : [], notes: [], definedBy: null };
-};
+const makePlaybook = (name, kind, parsed) => ({ name, kind, title: parsed.title, intro: parsed.intro, steps: parsed.steps.map((t) => newStep(t, name, kind)), notes: [], family: [] });
 
-/** Finds the one step a quote names, or the reason it names none. Team files search bundled text only. */
-function locate(pb, quote, team) {
-  if (team && pb.bundled.length === 0) return { fail: 'teamOnly' };
+/** The one step a quote names in what `seen` wrote, or the reason it names none. Team files see only bundled text. */
+function locate(pb, quote, seen, team) {
   const re = quoteRegex(quote);
-  const pool = team ? pb.bundled.map((s) => [s, original(s)]) : pb.steps.map((s) => [s, effective(s)]);
-  const hits = pool.flatMap(([, text], i) => (re.test(text) ? [i + 1] : []));
-  if (hits.length === 1) return { step: pool[hits[0] - 1][0] };
+  const hits = pb.steps.flatMap((s, i) => (seen.has(s.origin) && re.test(viewText(s, seen)) ? [i + 1] : []));
+  if (hits.length === 1) return { step: pb.steps[hits[0] - 1] };
   if (hits.length > 1) return { fail: 'ambiguous', steps: hits };
-  if (team && pb.steps.some((s) => re.test(effective(s)))) return { fail: 'teamOnly' };
+  const elsewhere = pb.steps.find((s) => re.test(effective(s)));
+  if (elsewhere) return team ? { fail: 'teamOnly' } : { fail: 'unseen', writer: writersOf(elsewhere, re)[0] };
   if (re.test(pb.intro)) return { fail: 'outside' };
   return { fail: 'missing' };
 }
 
+/** The stems that wrote the unstruck words `re` matches in a step, in step order. */
+function writersOf(step, re) {
+  const live = step.segments.filter((s) => !s.struckBy);
+  const m = re.exec(live.map((s) => s.text).join(''));
+  if (!m) return [];
+  const out = [];
+  let pos = 0;
+  for (const s of live) {
+    const [a, b] = [pos, pos + s.text.length];
+    pos = b;
+    if (b > m.index && a < m.index + m[0].length && s.text.trim() && !out.includes(s.writer)) out.push(s.writer);
+  }
+  return out;
+}
+
 /**
- * Runs every layer file, in cascade order, over every playbook. Each file targets its `extends` stems plus its own
- * stem when that names a playbook known below its layer; a file with no target defines a standalone playbook.
+ * Builds the extends graph over the active files: roots (bundled playbooks and standalones) and patches. A patch is
+ * active when a parent is; one in a cycle, with no parent, or whose parents exist only in other contexts is not.
  */
-function cascade(bundled, files, order) {
-  const rank = (layer) => order.indexOf(layer);
-  const playbooks = new Map([...bundled].map(([name, parsed]) => [name, makePlaybook(name, 'pstack', parsed)]));
-  for (const layer of order) {
-    const known = new Set(playbooks.keys());
-    for (const file of files.filter((f) => f.layer === layer)) {
-      const valid = (stem) => (file.team ? bundled.has(stem) : known.has(stem));
-      for (const stem of file.extends) {
-        if (valid(stem)) continue;
-        const above = files.find((f) => !f.team && f !== file && f.stem === stem && f.extends.length === 0 && rank(f.layer) >= rank(layer));
-        const message = above
-          ? `extends ${stem}, which the ${above.layer} layer defines, and a layer extends only playbooks below it`
-          : `extends ${stem}, which pstack ${file.pstackName} has no playbook for`;
-        file.problems.push({ line: file.extendsLine, message });
-        file.unresolved = true;
-      }
-      if (!file.team && known.has(file.stem) && !file.extends.includes(file.stem)) {
-        file.info.push({ line: file.extendsLine, message: `targets ${file.stem} by its file name; add \`extends: ${[...file.extends, file.stem].join(', ')}\` to say so` });
-      }
-      file.targets = [...new Set([...file.extends.filter(valid), ...(known.has(file.stem) ? [file.stem] : [])])];
-      if (file.targets.length === 0 && file.extends.length === 0) {
-        const pb = makePlaybook(file.stem, layer, parsePlaybook(file.body));
-        pb.definedBy = file;
-        playbooks.set(file.stem, pb);
-        for (const edit of file.edits) file.problems.push({ line: edit.line, message: 'standalone playbook cannot carry edits' });
-        continue;
-      }
-      const fails = file.edits.map(() => []);
-      const applied = new Set();
-      for (const target of file.targets) {
-        const pb = playbooks.get(target);
-        file.edits.forEach((edit, i) => {
-          const found = locate(pb, edit.quote, file.team);
-          if (!found.step) return fails[i].push(found);
-          const verb = VERBS[edit.verb];
-          const result = verb.apply(pb, found.step, edit, layer);
-          applied.add(i);
-          if (!verb.edits) return;
-          const step = found.step;
-          if (layer !== step.origin && !step.touched.includes(layer)) step.touched.push(layer);
-          if (rank(layer) > rank(step.origin)) {
-            step.overrides.push({ layer, verb: edit.verb, quote: edit.quote, origin: step.origin, ...result });
-          }
-        });
-        for (const note of file.notes) pb.notes.push({ text: note.text, layer });
-      }
-      file.edits.forEach((edit, i) => {
-        if (applied.has(i) || fails[i].length === 0) return;
-        const worst = fails[i].reduce((a, b) => (FAILURES[b.fail].rank > FAILURES[a.fail].rank ? b : a));
-        file.problems.push({ line: edit.line, message: FAILURES[worst.fail].message(edit.quote, worst.steps) });
-      });
+function buildGraph(bundled, files, universe, pstackName) {
+  const nodes = new Map([...bundled.keys()].map((stem) => [stem, { stem, kind: 'pstack', file: null, parents: [] }]));
+  const byStem = new Map(files.map((f) => [f.stem, f]));
+  for (const file of files) {
+    if (bundled.has(file.stem)) continue;
+    if (file.extends.length === 0) {
+      nodes.set(file.stem, { stem: file.stem, kind: file.kind, file, parents: [] });
+      for (const edit of file.edits) file.problems.push({ line: edit.line, message: 'standalone playbook cannot carry edits' });
     }
   }
-  return playbooks;
+  for (const file of files) {
+    for (const cycle of cycleFrom(file, byStem)) file.problems.push({ line: file.extendsLine, message: `extends a cycle: ${cycle.join(' -> ')}` });
+  }
+  const pending = files.filter((f) => f.extends.length > 0 && !bundled.has(f.stem) && !f.problems.some((p) => p.message.startsWith('extends a cycle')));
+  for (const file of pending) {
+    if (file.kind !== 'team') continue;
+    for (const stem of file.extends.filter((s) => !bundled.has(s))) {
+      file.problems.push({ line: file.extendsLine, message: `team files extend only bundled playbooks, and pstack ${pstackName} bundles no ${stem}` });
+      file.unresolved = true;
+    }
+  }
+  const valid = (file, stem) => nodes.has(stem) && (file.kind !== 'team' || bundled.has(stem));
+  const teamInvalid = (file, stem) => file.kind === 'team' && !bundled.has(stem);
+  // A file applies only where every parent it names exists, so a parent defined only elsewhere keeps it dormant here.
+  const ready = (file) => file.extends.some((s) => valid(file, s)) && file.extends.every((s) => valid(file, s) || teamInvalid(file, s) || !universe.has(s));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const file of pending) {
+      if (nodes.has(file.stem) || !ready(file)) continue;
+      nodes.set(file.stem, { stem: file.stem, kind: file.kind, file, parents: [] });
+      grew = true;
+    }
+  }
+  const dormant = [];
+  for (const file of pending) {
+    const node = nodes.get(file.stem);
+    if (node) node.parents = file.extends.filter((s) => valid(file, s));
+    for (const stem of file.extends) {
+      if (valid(file, stem) || teamInvalid(file, stem)) continue;
+      const where = universe.get(stem);
+      if (pending.some((f) => f.stem === stem)) file.info.push({ line: file.extendsLine, message: `extends ${stem}, which is dormant here, so this file is too` });
+      else if (where) file.info.push({ line: file.extendsLine, message: `extends ${stem}, which only ${where.where} defines, so this file is dormant here` });
+      else {
+        file.problems.push({ line: file.extendsLine, message: `extends ${stem}, which no playbook defines` });
+        file.unresolved = true;
+      }
+    }
+    if (!node) dormant.push(file);
+  }
+  return { nodes, dormant };
+}
+
+/** Each cycle through `file` along user extends, as stems from `file` back to itself, at most one per parent. */
+function cycleFrom(file, byStem) {
+  const found = [];
+  for (const first of file.extends) {
+    const path = [file.stem];
+    const walk = (stem, seen) => {
+      if (stem === file.stem) return [...path, stem];
+      const next = byStem.get(stem);
+      if (!next || seen.has(stem)) return null;
+      path.push(stem);
+      for (const parent of next.extends) {
+        const hit = walk(parent, new Set([...seen, stem]));
+        if (hit) return hit;
+      }
+      path.pop();
+      return null;
+    };
+    const hit = walk(first, new Set());
+    if (hit) {
+      found.push(hit);
+      break;
+    }
+  }
+  return found;
+}
+
+/** Every stem `stem` reaches through active parents, itself excluded. */
+function ancestorsOf(nodes, stem, memo = new Map()) {
+  if (memo.has(stem)) return memo.get(stem);
+  const out = new Set();
+  memo.set(stem, out);
+  for (const parent of nodes.get(stem)?.parents ?? []) {
+    out.add(parent);
+    for (const a of ancestorsOf(nodes, parent, memo)) out.add(a);
+  }
+  return out;
+}
+
+const KIND_RANK = { pstack: 0, team: 1, user: 2 };
+const byApplyOrder = (a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || (a.stem < b.stem ? -1 : a.stem > b.stem ? 1 : 0);
+
+/** A root's family in apply order: a topological sort that breaks ties team before user, then by stem. */
+function familyOrder(nodes, root, ancestors) {
+  const members = [...nodes.values()].filter((n) => n.stem === root || ancestors(n.stem).has(root));
+  const inFamily = new Set(members.map((n) => n.stem));
+  const waiting = new Map(members.map((n) => [n.stem, n.parents.filter((p) => inFamily.has(p)).length]));
+  const order = [];
+  for (let ready = members.filter((n) => waiting.get(n.stem) === 0); ready.length; ) {
+    ready.sort(byApplyOrder);
+    const next = ready.shift();
+    order.push(next);
+    for (const n of members) {
+      if (!n.parents.includes(next.stem)) continue;
+      waiting.set(n.stem, waiting.get(n.stem) - 1);
+      if (waiting.get(n.stem) === 0) ready.push(n);
+    }
+  }
+  return order;
+}
+
+/**
+ * Applies every active family. Each file sees only what its ancestors wrote, so the result does not depend on the
+ * order siblings are read in. An edit fails only when it lands in none of its families.
+ */
+function applyFamilies(bundled, graph) {
+  const { nodes } = graph;
+  const memo = new Map();
+  const ancestors = (stem) => ancestorsOf(nodes, stem, memo);
+  const playbooks = new Map();
+  const roots = new Map();
+  const outcomes = new Map();
+  for (const node of nodes.values()) {
+    if (node.parents.length || (node.file && node.file.extends.length)) continue;
+    const parsed = node.file ? parsePlaybook(node.file.body) : bundled.get(node.stem);
+    const pb = makePlaybook(node.stem, node.kind, parsed);
+    playbooks.set(node.stem, pb);
+    for (const member of familyOrder(nodes, node.stem, ancestors)) {
+      pb.family.push({ stem: member.stem, kind: member.kind });
+      roots.set(member.stem, [...(roots.get(member.stem) ?? []), node.stem]);
+      if (member.stem === node.stem) continue;
+      const file = member.file;
+      const seen = new Set([...ancestors(file.stem)]);
+      if (!outcomes.has(file)) outcomes.set(file, file.edits.map(() => ({ applied: false, fails: [], clash: null, step: null })));
+      file.edits.forEach((edit, i) => {
+        const found = locate(pb, edit.quote, seen, file.kind === 'team');
+        const outcome = outcomes.get(file)[i];
+        if (!found.step) return outcome.fails.push(found);
+        const verb = VERBS[edit.verb];
+        const step = found.step;
+        const result = verb.apply(pb, step, edit, file, seen);
+        outcome.applied = true;
+        if (result.clash) outcome.clash = { other: result.clash, pb, step };
+        if (!verb.edits || step.origin === file.stem) return;
+        const after = step.touched.filter((s) => s !== file.stem);
+        step.overrides.push({ file: file.stem, verb: edit.verb, quote: edit.quote, origin: step.origin, ...(after.length ? { after } : {}) });
+        if (!step.touched.includes(file.stem)) step.touched.push(file.stem);
+      });
+      for (const note of file.notes) pb.notes.push({ text: note.text, file: file.stem });
+    }
+  }
+  for (const [file, list] of outcomes) {
+    file.edits.forEach((edit, i) => {
+      const { applied, fails, clash } = list[i];
+      if (clash) file.problems.push({ line: edit.line, message: `replaces words that ${clash.other} also replaces in ${clash.pb.name} step ${clash.pb.steps.indexOf(clash.step) + 1}; make one file extend the other` });
+      if (applied || fails.length === 0) return;
+      const worst = fails.reduce((a, b) => (FAILURES[b.fail].rank > FAILURES[a.fail].rank ? b : a));
+      file.problems.push({ line: edit.line, message: failure(worst, edit.quote) });
+    });
+  }
+  return { playbooks, roots, ancestors };
 }
 
 const kebab = (title) => title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
@@ -319,13 +427,13 @@ const kebab = (title) => title.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim()
  * Resolves a written name to a playbook stem by stem or by title, the way poteto-mode turns a title into a file name.
  * `ignored` names a poteto-mode section or skill, which a bold word after "per" often means instead.
  */
-function playbookIndex(pstackDir, playbooks, files) {
+function playbookIndex(pstackDir, playbooks, roots) {
   const stems = new Map();
   for (const pb of playbooks.values()) {
     stems.set(pb.name, pb.name);
     if (pb.title) stems.set(kebab(pb.title), pb.name);
   }
-  for (const file of files) stems.set(file.stem, file.stem);
+  for (const stem of roots.keys()) stems.set(stem, stem);
   const skillsDir = join(pstackDir, 'skills');
   const skills = new Set(listDir(skillsDir));
   const guide = join(skillsDir, 'poteto-mode', 'SKILL.md');
@@ -334,6 +442,7 @@ function playbookIndex(pstackDir, playbooks, files) {
   return {
     resolve: (name) => stems.get(kebab(name)) ?? null,
     names: [...stems.keys()],
+    root: (stem) => roots.get(stem)?.[0] ?? null,
     ignored: (name) => [kebab(name), `principle-${kebab(name)}`].some((k) => sections.has(k) || skills.has(k)),
   };
 }
@@ -399,21 +508,23 @@ function nearMisses(text, index) {
 
 /** Each `<playbook> step N`, `steps N, M` or `steps N-M` that names a step the merged playbook lacks. */
 function badStepRefs(text, index, playbooks) {
+  // A step number counts against the family's computed steps, whichever member the text names.
   if (index.names.length === 0) return [];
   const re = new RegExp(`(?<![\\w-])(${nameAlternatives(index)})(?:\\.md)?(?:\\*\\*|\`)?\\s+steps?\\s+(\\d+(?:(?:\\s*(?:,|and|or|to|&)\\s*|[-–])\\d+)*)(?![\\w-])`, 'gi');
   return [...text.matchAll(re)].flatMap((m) => {
     const stem = index.resolve(m[1]);
-    const count = playbooks.get(stem)?.steps.length;
+    const count = playbooks.get(index.root(stem))?.steps.length;
     if (count === undefined) return [];
     return m[2].match(/\d+/g).map(Number).filter((n) => n < 1 || n > count).map((n) => ({ stem, n, count }));
   });
 }
 
-/** Each other playbook the steps, then the notes, hand off to, in order of first mention. */
+/** Each other family the steps, then the notes, hand off to, named by its root, in order of first mention. */
 function handoffs(pb, index) {
   const found = new Map();
   const mention = (text, step) => {
-    for (const { stem } of handoffRefs(text, index)) {
+    for (const ref of handoffRefs(text, index)) {
+      const stem = ref.stem && index.root(ref.stem);
       if (!stem || stem === pb.name) continue;
       if (!found.has(stem)) found.set(stem, { playbook: stem, steps: [], inNotes: false });
       const entry = found.get(stem);
@@ -426,17 +537,13 @@ function handoffs(pb, index) {
   return [...found.values()];
 }
 
-const touches = (file, name) => file.targets?.includes(name) || (file.targets?.length === 0 && file.extends.length === 0 && file.stem === name);
-
-function computed(pb, order, index) {
-  const rank = (layer) => order.indexOf(layer);
+function computed(pb, index) {
   return {
-    steps: pb.steps.map((s) => ({ text: effective(s), origin: s.origin, touched: s.touched, display: display(s) })),
+    family: pb.family,
+    steps: pb.steps.map((s) => ({ text: effective(s), origin: s.origin, kind: s.kind, touched: s.touched, display: display(s), tags: tags(s) })),
     handoffs: handoffs(pb, index),
     notes: pb.notes,
-    overrides: pb.steps
-      .flatMap((s, i) => s.overrides.map((o) => ({ step: i + 1, ...o })))
-      .sort((a, b) => a.step - b.step || rank(a.layer) - rank(b.layer)),
+    overrides: pb.steps.flatMap((s, i) => s.overrides.map((o) => ({ step: i + 1, ...o }))),
   };
 }
 
@@ -512,37 +619,20 @@ function findCheckout(cwd) {
   return { root, name: remote?.name ?? basename(root), owner: remote?.owner ?? null };
 }
 
-function orgFromLinks(teamDir, configDir) {
-  let configReal;
-  let teamReal;
-  try {
-    configReal = realpathSync(configDir);
-    teamReal = realpathSync(teamDir);
-  } catch {
-    return null;
-  }
-  for (const name of listDir(teamDir)) {
-    const path = join(teamDir, name);
-    if (!lstatSync(path).isSymbolicLink()) continue;
-    const rel = relative(configReal, resolve(teamReal, readlinkSync(path))).split(sep).join('/');
-    const m = new RegExp(`^${DIR.orgs}/([^/]+)/${DIR.standard}/`).exec(rel);
-    if (m) return m[1];
-  }
-  return null;
-}
-
+/**
+ * The repo of the current checkout, or of `--repo`. A `--repo` outside its checkout reads the checkout config.json
+ * records, so its team files and org come out the same from any directory.
+ */
 function resolveRepo(opts, configDir, settings, checkout = findCheckout(process.cwd())) {
-  const useCheckout = checkout && (!opts.repo || opts.repo === checkout.name);
-  const name = opts.repo ?? checkout?.name ?? null;
-  const owner = useCheckout ? checkout.owner : null;
-  const root = useCheckout ? checkout.root : null;
-  const agentsDir = root && lexists(join(root, '.agents', 'playbooks')) ? join(root, '.agents', 'playbooks') : null;
-  const teamDir = agentsDir ?? (name ? join(configDir, DIR.repos, name, DIR.team) : null);
-  const teamDisplay = agentsDir ? (file) => `.agents/playbooks/${file}` : (file) => join(teamDir, file);
-  const orgs = Object.entries(settings?.orgs ?? {});
-  let org = owner ? (orgs.find(([, o]) => o.owners.includes(owner))?.[0] ?? null) : null;
-  if (!org && !agentsDir && teamDir && isDir(teamDir)) org = orgFromLinks(teamDir, configDir);
-  return { name, owner, org, root, agentsDir, teamDir, teamDisplay };
+  let found = checkout && (!opts.repo || opts.repo === checkout.name) ? checkout : null;
+  const recorded = opts.repo && !found ? settings?.repos?.[opts.repo]?.checkout : null;
+  if (recorded && isDir(recorded)) found = findCheckout(recorded);
+  const name = opts.repo ?? found?.name ?? null;
+  const owner = found?.owner ?? null;
+  const root = found?.root ?? null;
+  const agentsDir = root && lexists(join(root, TEAM_DIR)) ? join(root, TEAM_DIR) : null;
+  const org = owner ? (Object.entries(settings?.orgs ?? {}).find(([, o]) => o.owners.includes(owner))?.[0] ?? null) : null;
+  return { name, owner, org, root, agentsDir, teamDisplay: (file) => `.agents/playbooks/${file}` };
 }
 
 const PLAYBOOKS = join('skills', 'poteto-mode', 'playbooks');
@@ -648,33 +738,35 @@ function loadContext(opts) {
   const settings = readSettings(configDir);
   const configProblems = [];
   if (settings?.raw.layers !== undefined) {
-    configProblems.push({ path: settings.path, line: 1, message: '"layers" is retired: the numbered folders set the cascade order, so delete the key' });
+    configProblems.push({ path: settings.path, line: 1, message: '"layers" is retired: extends sets the order, so delete the key' });
   }
-  for (const [old, now] of Object.entries(LEGACY_DIRS)) {
-    if (isDir(join(configDir, old))) {
-      configProblems.push({ path: join(configDir, old), line: 1, message: `rename ${old}/ to ${now}/ (inside it: standard/ to ${DIR.standard}/, team/ to ${DIR.team}/, overrides/ to ${DIR.overrides}/)` });
-    }
+  for (const old of RETIRED_DIRS.filter((d) => isDir(join(configDir, d)))) {
+    configProblems.push({
+      path: join(configDir, old),
+      line: 1,
+      message: 'numbered layer folders are retired; move each file into playbooks/ (playbooks/orgs/<org>/ or playbooks/repos/<repo>/ to limit where it applies) under a unique name, as playbooks.md describes',
+    });
   }
-  const order = isDir(configDir) ? ORDER : [];
   const pstack = resolvePstack(opts.pstack);
   const repo = resolveRepo(opts, configDir, settings);
-  return { configDir, settings, order, configProblems, pstack, repo, pinned: Boolean(opts.pstack) };
+  return { configDir, settings, configProblems, pstack, repo, pinned: Boolean(opts.pstack) };
 }
 
-function readLayerFile(path, displayPath, layer, team, pstackName) {
+/** One playbook file, team or user. `scope` is where it is active: a repo's checkout, everywhere, or one org or repo. */
+function readPlaybookFile(path, displayPath, kind, scope) {
   const parsed = parseLayerText(readFileSync(path, 'utf8'));
   const { front } = parsed;
   const problems = parsed.malformed.map((line) => ({ line, message: 'a change has no straight-quoted step text to anchor on' }));
   if (!front.when?.value) problems.push({ line: 1, message: 'missing when:' });
+  if (front.layer) problems.push({ line: front.layer.line, message: 'layer: is retired, because extends sets the order; delete it' });
   return {
     path,
     display: displayPath,
-    layer,
+    kind,
+    scope,
     stem: basename(path, '.md'),
-    team,
     extends: (front.extends?.value ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     extendsLine: front.extends?.line ?? 1,
-    source: front.source ?? null,
     front,
     edits: parsed.edits,
     notes: parsed.notes,
@@ -682,47 +774,27 @@ function readLayerFile(path, displayPath, layer, team, pstackName) {
     body: parsed.body,
     problems,
     info: [],
-    pstackName,
   };
 }
 
-/** Layer files in cascade order, plus team files that sit in no active layer (still checked). */
+/** The user scope folders active in a context, as [scope label, folder]. */
+const userDirs = (ctx) =>
+  Object.entries(SCOPES)
+    .map(([scope, s]) => [scope, s.dir(ctx)])
+    .filter(([, dir]) => dir);
+
+/** Team files from the checkout, then user files from each active scope folder. */
 function collectFiles(ctx) {
-  const active = [];
-  const inactive = [];
-  const team = mdFiles(ctx.repo.teamDir).map((name) => {
-    const file = readLayerFile(join(ctx.repo.teamDir, name), ctx.repo.teamDisplay(name), null, true, ctx.pstack.name);
-    const layer = file.front.layer?.value;
-    if (!LAYERS[layer]?.team || !file.source?.value) file.problems.push({ line: 1, message: 'team file needs layer: and source:' });
-    if (LAYERS[layer]?.team) {
-      file.layer = layer;
-      if (!ctx.order.includes(layer)) file.problems.push({ line: file.front.layer.line, message: `unknown layer ${layer}` });
-    }
-    return file;
-  });
-  for (const layer of ctx.order) {
-    if (LAYERS[layer].team) {
-      active.push(...team.filter((f) => f.layer === layer));
-      continue;
-    }
-    const dir = LAYERS[layer].dir(ctx);
-    for (const name of mdFiles(dir)) active.push(readLayerFile(join(dir, name), join(dir, name), layer, false, ctx.pstack.name));
-  }
-  inactive.push(...team.filter((f) => !ctx.order.includes(f.layer)));
-  return { active, inactive, team };
+  const team = mdFiles(ctx.repo.agentsDir).map((name) => readPlaybookFile(join(ctx.repo.agentsDir, name), ctx.repo.teamDisplay(name), 'team', ctx.repo.name));
+  const user = userDirs(ctx).flatMap(([scope, dir]) => mdFiles(dir).map((name) => readPlaybookFile(join(dir, name), join(dir, name), 'user', scope)));
+  return { team, user, all: [...team, ...user] };
 }
 
 /** Dangling symlinks in .agents/playbooks (top level) and anywhere under the config dir, each reported once. */
 function brokenLinks(ctx) {
   const problems = [];
   const seen = new Set();
-  const realDir = (dir) => {
-    try {
-      return realpathSync(dir);
-    } catch {
-      return dir;
-    }
-  };
+  const realDir = (dir) => realOr(dir) ?? dir;
   const dangling = (path) => lstatSync(path).isSymbolicLink() && !statSync(path, { throwIfNoEntry: false });
   let teamBroken = false;
   const agents = ctx.repo.agentsDir;
@@ -754,6 +826,16 @@ function brokenLinks(ctx) {
   return { problems, teamBroken };
 }
 
+/** A .agents/playbooks that links into the config dir is the retired layout, where the team folders lived in the config. */
+function linkedTeamDir(ctx) {
+  const agents = ctx.repo.agentsDir;
+  if (!agents || !lstatSync(agents).isSymbolicLink()) return [];
+  const real = realOr(agents);
+  const config = realOr(ctx.configDir);
+  if (!real || !config || !real.startsWith(`${config}${sep}`)) return [];
+  return [{ path: '.agents/playbooks', line: 1, message: 'links into the config dir; team playbooks are committed copies, so replace the link with them' }];
+}
+
 function runPstackCheck(ctx, teamBroken) {
   const skipped = (why) => ({ status: 'skipped', lines: [`not run: ${why}`] });
   if (!ctx.repo.agentsDir) return skipped('no .agents/playbooks');
@@ -765,16 +847,20 @@ function runPstackCheck(ctx, teamBroken) {
   return { status: r.status === 0 ? 'ok' : 'failed', lines };
 }
 
-/** Each playbook stem that some layer folder in the config holds for any org or repo, with the first such folder. */
-function configStems(ctx) {
+/**
+ * Every stem any context defines, with where: each user scope folder, and the team files of each checkout config.json
+ * records. A stem defined only elsewhere makes a file dormant here instead of broken.
+ */
+function stemUniverse(ctx) {
   const stems = new Map();
-  for (const layer of ctx.order) {
-    const [top, star, leaf] = LAYERS[layer].anywhere.split('/');
-    const dirs = star ? listDir(join(ctx.configDir, top)).map((name) => join(top, name, leaf)) : [top];
-    for (const dir of dirs) {
-      for (const stem of mdFiles(join(ctx.configDir, dir)).map((name) => basename(name, '.md'))) if (!stems.has(stem)) stems.set(stem, dir);
-    }
-  }
+  const add = (dir, where) => {
+    for (const name of mdFiles(dir)) if (!stems.has(basename(name, '.md'))) stems.set(basename(name, '.md'), { where, path: join(dir, name) });
+  };
+  const base = join(ctx.configDir, USER_DIR);
+  add(base, USER_DIR);
+  for (const group of ['orgs', 'repos']) for (const name of listDir(join(base, group))) add(join(base, group, name), `${USER_DIR}/${group}/${name}`);
+  const checkouts = [[ctx.repo.name, ctx.repo.root], ...Object.entries(ctx.settings?.repos ?? {}).map(([name, r]) => [name, r.checkout && isDir(r.checkout) ? findCheckout(r.checkout)?.root : null])];
+  for (const [name, root] of checkouts) if (root) add(join(root, TEAM_DIR), name);
   return stems;
 }
 
@@ -783,14 +869,38 @@ function readBundled(ctx) {
   return new Map(mdFiles(dir).map((f) => [basename(f, '.md'), parsePlaybook(readFileSync(join(dir, f), 'utf8'))]));
 }
 
+/** Stems must be unique: never a bundled stem, and never one another file active here, or a file active everywhere, uses. */
+function nameProblems(ctx, files, bundled, universe) {
+  const handle = ctx.settings?.raw.handle;
+  const hint = (stem, qualifier) => (qualifier ? `, such as ${stem}-${qualifier}.md` : '');
+  const qualifier = (file) => (file.kind === 'team' ? ctx.repo.org ?? ctx.repo.name : file.scope === 'org' ? ctx.repo.org : file.scope === 'repo' ? ctx.repo.name : handle);
+  const first = new Map();
+  for (const file of files) {
+    if (bundled.has(file.stem)) {
+      file.problems.push({ line: 1, message: `${file.stem} is a bundled playbook's name; rename the file${hint(file.stem, qualifier(file))}` });
+      continue;
+    }
+    const other = first.get(file.stem) ?? (file.scope === 'everywhere' && universe.get(file.stem)?.path !== file.path ? universe.get(file.stem) : null);
+    if (other) file.problems.push({ line: 1, message: `${file.stem} is also ${other.display ?? other.path}; rename one${hint(file.stem, qualifier(file))}` });
+    else first.set(file.stem, file);
+  }
+  const words = [ctx.repo.org, ctx.repo.name].filter(Boolean);
+  for (const file of files.filter((f) => f.kind === 'team' && words.length && !words.some((w) => f.stem.split('-').includes(w)))) {
+    file.info.push({ line: 1, message: `a team file name carries its scope word (${words.join(' or ')}), such as ${file.stem}-${words[0]}.md` });
+  }
+}
+
 function analyze(ctx, { pstackCheck }) {
   const bundled = readBundled(ctx);
   const files = collectFiles(ctx);
-  const playbooks = cascade(bundled, files.active, ctx.order);
-  const layerFiles = [...files.active, ...files.inactive];
-  const index = playbookIndex(ctx.pstack.dir, playbooks, layerFiles);
-  const elsewhere = configStems(ctx);
-  for (const file of layerFiles) {
+  const universe = stemUniverse(ctx);
+  nameProblems(ctx, files.all, bundled, universe);
+  const usable = files.all.filter((f) => !f.problems.some((p) => p.line === 1 && / is (?:a bundled playbook's name|also )/.test(p.message)));
+  const graph = buildGraph(bundled, usable, universe, ctx.pstack.name);
+  const { playbooks, roots, ancestors } = applyFamilies(bundled, graph);
+  const index = playbookIndex(ctx.pstack.dir, playbooks, roots);
+  const dormant = new Set(graph.dormant.map((f) => f.stem));
+  for (const file of files.all) {
     for (const { text, line } of file.prose) {
       for (const { phrase, stem } of nearMisses(text, index)) {
         file.info.push({ line, message: `"${phrase}" may name ${stem} but does not register as a handoff; if it is one, write playbooks/${stem}.md` });
@@ -800,17 +910,20 @@ function analyze(ctx, { pstackCheck }) {
       }
       for (const ref of handoffRefs(text, index)) {
         if (ref.stem) continue;
-        const where = elsewhere.get(kebab(ref.name));
-        if (where) file.info.push({ line, message: `hands off to ${ref.name}, which only ${where} defines` });
-        else file.problems.push({ line, message: `hands off to ${ref.name}, which no layer or pstack defines` });
+        const stem = kebab(ref.name);
+        const where = universe.get(stem);
+        if (dormant.has(stem)) file.info.push({ line, message: `hands off to ${ref.name}, which is dormant here` });
+        else if (where) file.info.push({ line, message: `hands off to ${ref.name}, which only ${where.where} defines` });
+        else file.problems.push({ line, message: `hands off to ${ref.name}, which no playbook defines` });
       }
     }
   }
   const links = brokenLinks(ctx);
-  return { files, playbooks, index, links, pstackCheck: pstackCheck ? runPstackCheck(ctx, links.teamBroken) : null };
+  links.problems.push(...linkedTeamDir(ctx));
+  return { files, graph, playbooks, roots, ancestors, index, links, pstackCheck: pstackCheck ? runPstackCheck(ctx, links.teamBroken) : null };
 }
 
-const fileProblems = (files, key = 'problems') => files.flatMap((f) => [...f[key]].sort((a, b) => a.line - b.line).map((p) => ({ path: f.display, ...p })));
+const fileProblems = (files, key = 'problems') => files.flatMap((f) => [...f[key]].sort((a, b) => a.line - b.line).map(({ path, line, message }) => ({ path: f.display, line, message })));
 
 const needsRecord = (ctx) => !ctx.pinned && ctx.settings && ctx.pstack.version && ctx.settings.pstack !== ctx.pstack.version;
 // Swaps only the version text, so the user's own formatting of config.json survives.
@@ -822,12 +935,11 @@ function record(ctx) {
 }
 
 function checkReport(ctx, analysis) {
-  const layerFiles = [...analysis.files.active, ...analysis.files.inactive];
-  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems(layerFiles)];
-  const info = fileProblems(layerFiles, 'info');
-  const proposed = analysis.files.team.filter((f) => f.source?.value === 'proposed').map((f) => ({ path: f.display, line: f.source.line }));
+  const files = analysis.files.all;
+  const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileProblems(files)];
+  const info = fileProblems(files, 'info');
   const passed = problems.length === 0 && analysis.pstackCheck.status !== 'failed';
-  return { pstack: ctx.pstack.version, problems, info, proposed, pstackCheck: analysis.pstackCheck, passed };
+  return { pstack: ctx.pstack.version, problems, info, pstackCheck: analysis.pstackCheck, passed };
 }
 
 const problemLine = (p) => `${p.path}:${p.line}: ${p.message}`;
@@ -838,7 +950,6 @@ function renderCheck(report, pstack) {
     ...(report.pstackCheck.status === 'skipped' ? [] : report.pstackCheck.lines),
     ...report.problems.map(problemLine),
     ...report.info.map((p) => `info: ${problemLine(p)}`),
-    ...report.proposed.map((p) => `proposed: ${p.path}:${p.line}`),
     report.passed
       ? `check passed: pstack ${pstack}`
       : `check failed: ${n ? `${n} ${n === 1 ? 'problem' : 'problems'}` : "pstack's checker failed"} against pstack ${pstack}`,
@@ -857,7 +968,7 @@ function everyRepoReport(ctx) {
   const statuses = reports.map((r) => r.pstackCheck.status);
   const lines = [...new Set(reports.flatMap((r) => (r.pstackCheck.status === 'skipped' ? [] : r.pstackCheck.lines)))];
   const status = statuses.includes('failed') ? 'failed' : statuses.includes('ok') ? 'ok' : 'skipped';
-  return { pstack: ctx.pstack.version, problems: once('problems'), info: once('info'), proposed: once('proposed'), pstackCheck: { status, lines }, passed: reports.every((r) => r.passed) };
+  return { pstack: ctx.pstack.version, problems: once('problems'), info: once('info'), pstackCheck: { status, lines }, passed: reports.every((r) => r.passed) };
 }
 
 function runCheck(ctx, opts) {
@@ -875,26 +986,28 @@ const headerParts = (ctx) => [ctx.repo.name, ctx.repo.owner ?? ctx.repo.org, `ps
 
 function renderCompute(r) {
   const sections = [`# ${r.playbook} (${r.header.join(' · ')})`];
+  if (r.asked !== r.playbook) sections.push(`${r.asked} is part of the ${r.playbook} family.`);
   if (r.withheld) {
-    sections.push(`No steps: a layer file that edits ${r.playbook} has problems, so some of its edits would be lost. Fix the files below, then run \`playbook check\` until it passes.`);
+    sections.push(`No steps: a file in the ${r.playbook} family has problems, so some of its edits would be lost. Fix the files below, then run \`playbook check\` until it passes.`);
   } else {
-    if (r.partial) sections.push('These steps may be incomplete: a layer file has an extends that names no playbook, so it edits nothing, and its edits may belong in these steps. It is listed under Problems.');
+    if (r.partial) sections.push('These steps may be incomplete: a file has an extends that names no playbook, so it edits nothing, and its edits may belong in these steps. It is listed under Problems.');
     sections.push(
       r.steps
         .map((s, i) => {
           const [first, ...rest] = s.display.split('\n');
-          return [`${i + 1}. ${first}   [${[s.origin, ...s.touched].join(' ~ ')}]`, ...rest].join('\n');
+          return [`${i + 1}. ${first}   ${s.tags}`, ...rest].join('\n');
         })
         .join('\n'),
     );
+    if (r.family.length > 1) sections.push(`Family: ${r.family.map((m) => `${m.stem} (${m.kind})`).join(', ')}`);
   }
   if (r.handoffs.length) {
     const where = (h) => [...(h.steps.length ? [`${h.steps.length > 1 ? 'steps' : 'step'} ${andList(h.steps)}`] : []), ...(h.inNotes ? ['notes'] : [])].join(', ');
     sections.push(['Hands off to:', ...r.handoffs.map((h) => `- ${h.playbook} (${where(h)})`)].join('\n'));
   }
-  if (r.notes.length) sections.push(['Notes:', ...r.notes.map((n) => `- ${n.text}   [${n.layer}]`)].join('\n'));
+  if (r.notes.length) sections.push(['Notes:', ...r.notes.map((n) => `- ${n.text}   [${n.file}]`)].join('\n'));
   if (r.overrides.length) {
-    const line = (o) => `- step ${o.step}: ${o.layer} ${o.verb === 'Replace' ? 'replaced' : 'added to'} "${o.quote}" (${o.origin}${o.over ? `, over ${o.over}` : ''})`;
+    const line = (o) => `- step ${o.step}: ${o.file} ${o.verb === 'Replace' ? 'replaced' : 'added to'} "${o.quote}" (${o.origin}${o.after ? `, after ${o.after.join(', ')}` : ''})`;
     sections.push(['Overrides:', ...r.overrides.map(line)].join('\n'));
   }
   if (r.problems.length) sections.push(['Problems:', ...r.problems.map(problemLine)].join('\n'));
@@ -903,35 +1016,49 @@ function renderCompute(r) {
   return sections.join('\n\n');
 }
 
+/** The root whose family `name` belongs to, by stem or title. A patch of several roots, or a dormant one, is a usage error. */
+function familyOf(analysis, name) {
+  const stem = analysis.index.resolve(name) ?? name;
+  const roots = analysis.roots.get(stem);
+  if (roots?.length === 1) return { root: roots[0], stem };
+  if (roots) throw new UsageError(`${stem} edits ${andList(roots)}; show one of those`);
+  const dormant = analysis.graph.dormant.find((f) => f.stem === stem);
+  if (dormant) throw new UsageError(`${stem} is dormant here: it extends ${andList(dormant.extends)}, which this context does not define`);
+  throw new UsageError(`no playbook named ${name}`);
+}
+
 function runCompute(ctx, opts, name) {
   const analysis = analyze(ctx, { pstackCheck: true });
-  const pb = analysis.playbooks.get(name);
-  if (!pb) throw new UsageError(`no playbook named ${name}`);
-  logRead(ctx, name);
+  const { root, stem } = familyOf(analysis, name);
+  const pb = analysis.playbooks.get(root);
+  logRead(ctx, root);
   if (needsRecord(ctx)) {
     const report = checkReport(ctx, analysis);
     if (!report.passed) return { out: opts.json ? checkJson(report, false) : renderCheck(report, ctx.pstack.name), status: 1 };
     record(ctx);
   }
-  const touching = analysis.files.active.filter((f) => touches(f, name));
+  const members = new Set(pb.family.map((m) => m.stem));
+  const touching = analysis.files.all.filter((f) => members.has(f.stem) || (f.extends.some((s) => members.has(s)) && f.problems.length));
   const fileFound = fileProblems(touching);
   // Its edits reach no playbook, and any playbook may be the one it meant, so every show reports it.
-  const unresolved = analysis.files.active.filter((f) => f.unresolved && !touching.includes(f));
+  const unresolved = analysis.files.all.filter((f) => f.unresolved && !touching.includes(f));
   const problems = [...ctx.configProblems, ...analysis.links.problems, ...fileFound, ...fileProblems(unresolved)];
   const withheld = fileFound.length > 0;
-  const empty = { steps: [], notes: [], overrides: [], handoffs: [] };
-  const result = { playbook: name, ...(withheld ? empty : computed(pb, ctx.order, analysis.index)), problems, pstackCheck: analysis.pstackCheck, withheld };
+  const empty = { family: pb.family, steps: [], notes: [], overrides: [], handoffs: [] };
+  const result = { playbook: root, asked: stem, ...(withheld ? empty : computed(pb, analysis.index)), problems, pstackCheck: analysis.pstackCheck, withheld };
   const status = problems.length || analysis.pstackCheck.status === 'failed' ? 1 : 0;
   if (!opts.json) return { out: renderCompute({ ...result, partial: unresolved.length > 0, header: headerParts(ctx) }), status };
   const { repo } = ctx;
   return {
     out: {
-      playbook: name,
+      playbook: root,
+      asked: stem,
       repo: repo.name,
       owner: repo.owner,
       org: repo.org,
       pstack: ctx.pstack.version,
-      steps: result.steps.map(({ text, origin, touched }) => ({ text, origin, touched })),
+      family: result.family,
+      steps: result.steps.map(({ text, origin, kind, touched }) => ({ text, origin, kind, touched })),
       notes: result.notes,
       overrides: result.overrides,
       handoffs: result.handoffs,
@@ -942,62 +1069,45 @@ function runCompute(ctx, opts, name) {
   };
 }
 
-/** The file in `layer` that holds edits to `name`, or the path a new one takes. */
-function editTarget(ctx, files, layer, name) {
-  const existing = files.find((f) => f.layer === layer && touches(f, name));
-  if (existing) return { path: existing.display, exists: true };
-  const { repo } = ctx;
-  if (layer === 'repo.standard') {
-    if (!repo.teamDir) return { path: null, exists: false };
-    const file = lexists(join(repo.teamDir, `${name}.md`)) ? `${repo.name}-${name}.md` : `${name}.md`;
-    return { path: repo.teamDisplay(file), exists: false };
-  }
-  const dir = layer === 'org.standard' ? repo.org && join(ctx.configDir, DIR.orgs, repo.org, DIR.standard) : LAYERS[layer].dir(ctx);
-  return { path: dir ? join(dir, `${name}.md`) : null, exists: false };
-}
-
-/** Why an edit in `layer` cannot anchor on `quote`, judged against the step as the layers below it leave it. */
-function anchorProblem(ctx, bundled, layer, name, quote, origin) {
-  if (layer === origin) return 'this layer wrote the step; change its text there';
-  const below = ctx.order.slice(0, ctx.order.indexOf(layer));
-  const pb = cascade(bundled, collectFiles(ctx).active.filter((f) => below.includes(f.layer)), below).get(name);
-  if (!pb) return 'no layer below this one defines the playbook';
-  const found = locate(pb, quote, LAYERS[layer].team);
-  return found.step ? null : FAILURES[found.fail].message(quote, found.steps);
+/**
+ * Where an edit to words `writers` wrote goes. A user file's own words change in that file. Anything else gets a user
+ * file that extends the writers, named <writer>-<handle>, since a file's quotes see only what its ancestors wrote.
+ */
+function editTarget(ctx, analysis, writers) {
+  const file = analysis.files.all.find((f) => f.stem === writers[0]);
+  if (writers.length === 1 && file?.kind === 'user') return { path: file.display, exists: true, own: true, extends: null };
+  const handle = ctx.settings?.raw.handle;
+  const name = handle ? `${writers[0]}-${handle}` : `${writers[0]}-mine`;
+  const existing = analysis.files.all.find((f) => f.stem === name && f.kind === 'user');
+  const path = existing?.display ?? join(SCOPES.everywhere.dir(ctx), `${name}.md`);
+  return { path, exists: Boolean(existing), own: false, extends: writers };
 }
 
 function runLocate(ctx, opts, name, quote) {
-  const bundled = readBundled(ctx);
-  const files = collectFiles(ctx).active;
-  const pb = cascade(bundled, files, ctx.order).get(name);
-  if (!pb) throw new UsageError(`no playbook named ${name}`);
-  const found = locate(pb, quote, false);
-  if (!found.step) return { out: FAILURES[found.fail].message(quote, found.steps), status: 1 };
+  const analysis = analyze(ctx, { pstackCheck: false });
+  const { root, stem } = familyOf(analysis, name);
+  const pb = analysis.playbooks.get(root);
+  const found = locate(pb, quote, new Set(pb.family.map((m) => m.stem)), false);
+  if (!found.step) return { out: failure(found, quote), status: 1 };
   const { step } = found;
-  const layers = ctx.order.map((layer) => {
-    const target = editTarget(ctx, files, layer, name);
-    const problem = target.path ? anchorProblem(ctx, bundled, layer, name, quote, step.origin) : `no ${layer.split('.')[0]} for this checkout`;
-    return { layer, ...target, problem };
-  });
+  const written = writersOf(step, quoteRegex(quote));
+  // A writer that another writer descends from is already visible to a file extending the descendant.
+  const writers = written.filter((w) => !written.some((o) => o !== w && analysis.ancestors(o).has(w)));
+  const edit = editTarget(ctx, analysis, writers);
   const n = pb.steps.indexOf(step) + 1;
   if (opts.json) {
     const { repo } = ctx;
-    const head = { playbook: name, repo: repo.name, owner: repo.owner, org: repo.org, pstack: ctx.pstack.version };
-    return { out: { ...head, step: n, text: effective(step), origin: step.origin, touched: step.touched, layers }, status: 0 };
+    const head = { playbook: root, asked: stem, repo: repo.name, owner: repo.owner, org: repo.org, pstack: ctx.pstack.version };
+    return { out: { ...head, step: n, text: effective(step), origin: step.origin, kind: step.kind, touched: step.touched, writers, edit }, status: 0 };
   }
-  const line = (l) => `- ${l.layer}: ${l.path ?? '(none)'} (${[l.exists ? 'exists' : 'new', l.problem].filter(Boolean).join('; ')})`;
+  const where = edit.own ? `${edit.path} (exists; it wrote these words, so change its text there)` : `${edit.path} (${edit.exists ? 'exists' : 'new'}), extending ${andList(edit.extends)}`;
   return {
-    out: [
-      `# ${name} step ${n} (${headerParts(ctx).join(' · ')})`,
-      `${display(step)}   [${[step.origin, ...step.touched].join(' ~ ')}]`,
-      ['Write the edit in:', ...layers.map(line)].join('\n'),
-    ].join('\n\n'),
+    out: [`# ${root} step ${n} (${headerParts(ctx).join(' · ')})`, `${display(step)}   ${tags(step)}`, `${andList(writers)} wrote the quoted words. Write the edit in:\n- ${where}`].join('\n\n'),
     status: 0,
   };
 }
 
-const WRITE_LAYERS = { user: 'user', org: 'org.overrides', repo: 'repo.overrides' };
-const WRITE_FLAGS = ['with', 'withFile', 'when', 'fromFile', 'layer'];
+const WRITE_FLAGS = ['with', 'withFile', 'when', 'fromFile', 'scope'];
 
 const readStdin = () => {
   try {
@@ -1016,25 +1126,16 @@ const readSource = (source, flag) => {
 };
 const oneLine = (text) => text.trim().replace(/\s*\n\s*/g, ' ');
 
-/** The folder a write in the chosen layer lands in. Never a team folder, which changes only through a pull request. */
+/** The user scope folder a write lands in. Never a team folder, which changes only through a pull request. */
 function writeDir(ctx, opts) {
-  const key = opts.layer ?? 'user';
-  const layer = WRITE_LAYERS[key];
-  if (!layer) throw new UsageError(`--layer ${key}: use user, org or repo`);
+  const scope = opts.scope ?? 'everywhere';
+  if (!SCOPES[scope]) throw new UsageError(`--scope ${scope}: use everywhere, org or repo`);
   if (!isDir(ctx.configDir)) throw new UsageError(`no config dir at ${ctx.configDir}; run the setup skill first`);
-  const dir = LAYERS[layer].dir(ctx);
-  if (!dir) throw new UsageError(`no ${key} layer for this checkout; run from a checkout of the ${key}, or pass --repo`);
-  const real = realOr(dir);
-  if (/(^|\/)(01-standard|01-team|\.agents)(\/|$)/.test(real) && !real.startsWith(`${realOr(ctx.configDir)}/${DIR.user}`)) {
-    throw new UsageError(`${dir} resolves into a team folder; team changes go through a pull request`);
-  }
-  return { layer, dir };
-}
-
-/** Everything the `layer` sees below itself, so a quote anchors on the text the layer will edit. */
-function below(ctx, layer) {
-  const order = ctx.order.slice(0, ctx.order.indexOf(layer));
-  return { order, playbooks: cascade(readBundled(ctx), collectFiles(ctx).active.filter((f) => order.includes(f.layer)), order) };
+  const dir = SCOPES[scope].dir(ctx);
+  if (!dir) throw new UsageError(`no ${scope} for this checkout; run from a checkout of the ${scope}, or pass --repo`);
+  const real = realOr(dir) ?? dir;
+  if (real.split(sep).includes('.agents')) throw new UsageError(`${dir} resolves into a team folder; team changes go through a pull request`);
+  return dir;
 }
 
 /** The current context, the one with no repo, and each repo config.json records, read from its checkout when it has one. */
@@ -1045,7 +1146,7 @@ function everyContext(ctx) {
     return { ...ctx, repo: resolveRepo({ repo: name }, ctx.configDir, ctx.settings, checkout) };
   };
   const all = [ctx, at(null), ...Object.keys(ctx.settings?.repos ?? {}).map(at)];
-  const key = ({ repo }) => JSON.stringify([repo.name, repo.org, repo.teamDir]);
+  const key = ({ repo }) => JSON.stringify([repo.name, repo.org, repo.agentsDir]);
   return all.filter((c, i) => all.findIndex((o) => key(o) === key(c)) === i);
 }
 
@@ -1060,13 +1161,13 @@ const contextLines = (contexts, ctx, analysis) => contexts.flatMap((c) => {
 const sameProblem = (line) => line.replace(/ has \d+ steps?$/, ' has N steps');
 
 /**
- * Writes `next`, then runs check in every context that reads the file's folder, since a user file changes what an org
- * or repo override can quote. Only a problem the write added refuses it, so a problem already on disk never blocks an
+ * Writes `next`, then runs check in every context, since a user file can change what another file quotes or collide
+ * with a name in any repo. Only a problem the write added refuses it, so a problem already on disk never blocks an
  * unrelated edit or its own repair. A refusal puts the prior bytes back and exits 1. `prior` is a Buffer, so a file that
  * is not UTF-8 comes back whole.
  */
-function commitWrite(ctx, layer, path, prior, next) {
-  const contexts = everyContext(ctx).filter((c) => LAYERS[layer].dir(c) === dirname(path));
+function commitWrite(ctx, path, prior, next) {
+  const contexts = everyContext(ctx);
   const before = new Set(contextLines(contexts).map(sameProblem));
   let made = null;
   for (let d = dirname(path); !lexists(d); d = dirname(d)) made = d;
@@ -1090,7 +1191,10 @@ function commitWrite(ctx, layer, path, prior, next) {
 
 const remainingNote = (remaining) => (remaining.length ? ['', 'this edit added no problems, but check still reports:', ...remaining] : []);
 
-function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
+function runExtend(ctx, opts, args) {
+  const [parent, ...rest] = args;
+  if (rest.length === 2 && !ctx.settings?.raw.handle) throw new UsageError('give a file name, or set handle in config.json');
+  const [fileName, verbWord, rawQuote] = rest.length === 2 ? [`${parent}-${ctx.settings.raw.handle}`, ...rest] : rest;
   const verb = ['After', 'Before', 'Replace', 'In'].find((v) => v.toLowerCase() === verbWord.toLowerCase());
   if (!verb) throw new UsageError(`${verbWord}: use after, before, replace or in`);
   const quote = rawQuote.trim();
@@ -1099,13 +1203,22 @@ function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
   if ((opts.with === null) === (opts.withFile === null)) throw new UsageError('give exactly one of --with and --with-file');
   const text = oneLine(opts.with === null ? readSource(opts.withFile, '--with-file') : opts.with === '-' ? readStdin() : opts.with);
   if (!text) throw new UsageError('the change text is empty');
-  const { layer, dir } = writeDir(ctx, opts);
-  const seen = below(ctx, layer).playbooks.get(parent);
-  if (!seen) throw new UsageError(`no playbook named ${parent} at or below the ${layer} layer`);
-  const found = locate(seen, quote, false);
+  const dir = writeDir(ctx, opts);
+  const analysis = analyze(ctx, { pstackCheck: false });
+  const roots = analysis.roots.get(analysis.index.resolve(parent) ?? parent);
+  if (!roots || analysis.index.resolve(parent) !== parent) throw new UsageError(`no playbook named ${parent} is active here; run from a checkout where it is, or pass --repo`);
+  // The new file sees its parent and the parent's ancestors, the same text its quotes will match once written.
+  const seen = new Set([parent, ...analysis.ancestors(parent)]);
+  let found;
+  let pb;
+  for (const root of roots) {
+    pb = analysis.playbooks.get(root);
+    found = locate(pb, quote, seen, false);
+    if (found.step) break;
+  }
   if (!found.step) {
-    const hits = found.steps?.map((n) => `${n}. ${effective(seen.steps[n - 1]).slice(0, 70).trimEnd()}...`);
-    throw Object.assign(new UsageError(`refused: ${FAILURES[found.fail].message(quote, found.steps)}${hits ? `\n${hits.join('\n')}` : ''}`), { status: 1 });
+    const hits = found.steps?.map((n) => `${n}. ${effective(pb.steps[n - 1]).slice(0, 70).trimEnd()}...`);
+    throw Object.assign(new UsageError(`refused: ${failure(found, quote)}${hits ? `\n${hits.join('\n')}` : ''}`), { status: 1 });
   }
   const path = join(dir, `${fileName}.md`);
   const edit = `- **${verb}** "${quote}" ${text}`;
@@ -1120,7 +1233,7 @@ function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
     const stems = front.extends.value.split(',').map((x) => x.trim()).filter(Boolean);
     if (stems.length === 0) throw new UsageError(`${path} defines a standalone playbook; pick another file name`);
     // latin1 maps each byte to one character, so bytes that are not UTF-8 pass through the line edit unchanged.
-    const asBytes = (text) => Buffer.from(text).toString('latin1');
+    const asBytes = (value) => Buffer.from(value).toString('latin1');
     const lines = prior.toString('latin1').replaceAll('\r\n', '\n').split('\n');
     if (!stems.includes(parent)) lines[front.extends.line - 1] = asBytes(`extends: ${[...stems, parent].join(', ')}`);
     next = Buffer.from(`${lines.join('\n').replace(/\n*$/, '')}\n${asBytes(edit)}\n`, 'latin1');
@@ -1128,12 +1241,14 @@ function runExtend(ctx, opts, [parent, fileName, verbWord, rawQuote]) {
     if (opts.when === null || !oneLine(opts.when)) throw new UsageError('a new file needs --when "<one sentence naming the requests it serves>"');
     next = `---\nextends: ${parent}\nwhen: ${oneLine(opts.when)}\n---\n\n${edit}\n`;
   }
-  const { analysis, remaining } = commitWrite(ctx, layer, path, prior, next);
-  const pb = analysis.playbooks.get(parent);
-  const flat = (t) => t.replace(/\s+/g, ' ');
-  const i = pb.steps.findIndex((s) => flat(effective(s)).includes(flat(text)) && (s.origin === layer || s.touched.includes(layer)));
+  const { analysis: after, remaining } = commitWrite(ctx, path, prior, next);
   const out = [`${exists ? 'appended to' : 'created'} ${path}`];
-  if (i >= 0) out.push('', `# ${parent} step ${i + 1} (${headerParts(ctx).join(' · ')})`, `${display(pb.steps[i])}   [${[pb.steps[i].origin, ...pb.steps[i].touched].join(' ~ ')}]`);
+  const flat = (value) => value.replace(/\s+/g, ' ');
+  for (const root of after.roots.get(fileName) ?? []) {
+    const shown = after.playbooks.get(root);
+    const i = shown.steps.findIndex((s) => flat(effective(s)).includes(flat(text)) && (s.origin === fileName || s.touched.includes(fileName)));
+    if (i >= 0) out.push('', `# ${root} step ${i + 1} (${headerParts(ctx).join(' · ')})`, `${display(shown.steps[i])}   ${tags(shown.steps[i])}`);
+  }
   return { out: [...out, ...remainingNote(remaining)].join('\n'), status: 0 };
 }
 
@@ -1143,52 +1258,34 @@ function runNew(ctx, opts, [name]) {
   if (opts.with !== null || opts.withFile !== null) throw new UsageError('--with and --with-file belong to extend');
   const when = opts.when === null ? '' : oneLine(opts.when);
   if (!when) throw new UsageError('give --when "<one sentence naming the requests it serves>"');
-  const { layer, dir } = writeDir(ctx, opts);
-  const known = below(ctx, ctx.order[ctx.order.indexOf(layer)]);
-  const upto = ctx.order.slice(0, ctx.order.indexOf(layer) + 1);
-  const exists = cascade(readBundled(ctx), collectFiles(ctx).active.filter((f) => upto.includes(f.layer)), upto).has(name) || known.playbooks.has(name);
+  const dir = writeDir(ctx, opts);
+  const analysis = analyze(ctx, { pstackCheck: false });
   const path = join(dir, `${name}.md`);
-  if (exists || lexists(path)) throw Object.assign(new UsageError(`refused: ${name} already exists at or below the ${layer} layer`), { status: 1 });
+  const taken = analysis.playbooks.has(name) || analysis.roots.has(name) || stemUniverse(ctx).has(name) || lexists(path);
+  if (taken) throw Object.assign(new UsageError(`refused: ${name} already exists; pick a unique name`), { status: 1 });
   const body = normalize(readSource(opts.fromFile, '--from-file')).trim();
   if (body.split('\n').some((l) => CHANGE_VERB.test(l))) throw Object.assign(new UsageError('refused: a standalone playbook cannot carry edit lines'), { status: 1 });
   if (body.startsWith('---')) throw new UsageError('give the steps only; new writes the front matter');
   if (parsePlaybook(body).steps.length === 0) throw Object.assign(new UsageError('refused: the body has no numbered steps (a line "1. " at column 0 starts one)'), { status: 1 });
-  const { analysis, remaining } = commitWrite(ctx, layer, path, null, `---\nextends:\nwhen: ${when}\n---\n\n${body}\n`);
-  const pb = analysis.playbooks.get(name);
-  return { out: `created ${path}\n\n# ${name} (${headerParts(ctx).join(' · ')})\n${pb.steps.map((s, i) => `${i + 1}. ${display(s)}   [${s.origin}]`).join('\n')}${remainingNote(remaining).join('\n')}`, status: 0 };
+  const { analysis: after, remaining } = commitWrite(ctx, path, null, `---\nextends:\nwhen: ${when}\n---\n\n${body}\n`);
+  const pb = after.playbooks.get(name);
+  return { out: `created ${path}\n\n# ${name} (${headerParts(ctx).join(' · ')})\n${pb.steps.map((s, i) => `${i + 1}. ${display(s)}   ${tags(s)}`).join('\n')}${remainingNote(remaining).join('\n')}`, status: 0 };
 }
 
 function runList(ctx, opts) {
-  const { files, playbooks } = analyze(ctx, { pstackCheck: false });
+  const { playbooks } = analyze(ctx, { pstackCheck: false });
   const rows = [...playbooks.values()]
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
-    .map((pb) => ({
-      name: pb.name,
-      source: pb.origin,
-      layers: Object.fromEntries(
-        ctx.order.map((layer) => {
-          if (pb.definedBy?.layer === layer) return [layer, 'defines'];
-          const edits = files.active.some((f) => f.layer === layer && f.targets?.includes(pb.name));
-          return [layer, edits ? 'edits' : 'none'];
-        }),
-      ),
-    }));
+    .map((pb) => ({ name: pb.name, kind: pb.kind, family: pb.family.slice(1).map((m) => m.stem) }));
   if (opts.json) {
     const { repo } = ctx;
-    return { out: { repo: repo.name, owner: repo.owner, org: repo.org, pstack: ctx.pstack.version, layers: ctx.order, playbooks: rows }, status: 0 };
+    return { out: { repo: repo.name, owner: repo.owner, org: repo.org, pstack: ctx.pstack.version, playbooks: rows }, status: 0 };
   }
   const nameWidth = Math.max('playbook'.length, ...rows.map((r) => r.name.length)) + 2;
-  const sourceWidth = Math.max('source'.length, ...rows.map((r) => label(r.source).length)) + 2;
-  const labels = ctx.order.map(label);
-  const cell = (text, width) => (' '.repeat(Math.floor((width - 1) / 2)) + text).padEnd(width);
+  const kindWidth = 'pstack'.length + 2;
   const [repoName, ...rest] = headerParts(ctx);
   const header = ctx.repo.name ? `${repoName} (${rest.join(' · ')})` : `(${repoName})`;
-  const lines = [
-    header,
-    `${'playbook'.padEnd(nameWidth)}${'source'.padEnd(sourceWidth)}${labels.join('  ')}`,
-    ...rows.map((r) => `${r.name.padEnd(nameWidth)}${label(r.source).padEnd(sourceWidth)}${ctx.order.map((l, i) => cell(CELLS[r.layers[l]], labels[i].length)).join('  ')}`),
-    `${CELLS.defines} defines  ${CELLS.edits} edits  ${CELLS.none} untouched`,
-  ];
+  const lines = [header, `${'playbook'.padEnd(nameWidth)}${'kind'.padEnd(kindWidth)}family`, ...rows.map((r) => `${r.name.padEnd(nameWidth)}${r.kind.padEnd(kindWidth)}${r.family.join(', ')}`)];
   return { out: lines.map((l) => l.trimEnd()).join('\n'), status: 0 };
 }
 
@@ -1196,7 +1293,6 @@ const SCRIPT = fileURLToPath(import.meta.url);
 const README = fileURLToPath(new URL('../../../README.md', import.meta.url));
 const SELF_BIN = fileURLToPath(new URL('../../../bin/jstack-cli', import.meta.url));
 const MARKS = { ok: '✓', fail: '✗', info: '-' };
-const TEAM_EXCLUDE = '/.agents/playbooks';
 
 const shellQuote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replaceAll("'", "'\\''")}'`);
 const sh = (...words) => words.map(shellQuote).join(' ');
@@ -1371,7 +1467,10 @@ function checkMode(h, configDir, handle) {
   return finding('mode', 'fail', message, { fixes });
 }
 
-/** One repo's team link and exclude line, in the checkout config.json records or else the current one. */
+/**
+ * One repo's team playbooks, in the checkout config.json records or else the current one. They are committed copies;
+ * a link into the config dir is the retired layout, and an untracked folder reaches only the operator.
+ */
 function checkRepo(h, configDir, settings, name, here) {
   const id = `repo:${name}`;
   const recorded = settings.repos[name]?.checkout;
@@ -1380,27 +1479,18 @@ function checkRepo(h, configDir, settings, name, here) {
   const checkout = isDir(path) ? findCheckout(path) : null;
   if (!checkout) return { finding: finding(id, 'fail', `${name}: ${path} is not a git checkout`, { fixes: h.fixes(5, { run: false }) }) };
   const { root } = checkout;
-  const team = join(configDir, DIR.repos, name, DIR.team);
-  const link = join(root, '.agents', 'playbooks');
-  const exclude = join(gitOut(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'info', 'exclude');
-  const problems = [];
-  const fixes = [];
-  if (!lexists(link)) {
-    problems.push(`${link} is missing`);
-    if (!isDir(dirname(link))) fixes.push(runFix(sh('mkdir', '-p', dirname(link))));
-    fixes.push(runFix(sh('ln', '-s', team, link)));
-  } else if (realOr(link) !== realOr(team)) {
-    problems.push(`${link} does not link to ${team}`);
-    fixes.push(showFix(`move ${link} aside, since it may hold the repo's own playbooks, then: ${sh('ln', '-s', team, link)}`));
+  const dir = join(root, TEAM_DIR);
+  if (!lexists(dir)) return { root, finding: finding(id, 'info', `${name}: ${root} has no .agents/playbooks, so it has no team playbooks`) };
+  const config = realOr(configDir);
+  const real = realOr(dir);
+  if (lstatSync(dir).isSymbolicLink() && config && real?.startsWith(`${config}${sep}`)) {
+    return { root, finding: finding(id, 'fail', `${name}: ${dir} links into the config dir; team playbooks are committed copies, so replace the link with them`, { fixes: [showFix(sh('rm', dir))] }) };
   }
-  const excluded = isFile(exclude) && readFileSync(exclude, 'utf8').split('\n').includes(TEAM_EXCLUDE);
-  if (!excluded) {
-    problems.push(`${exclude} does not hide ${TEAM_EXCLUDE}`);
-    if (!isDir(dirname(exclude))) fixes.push(runFix(sh('mkdir', '-p', dirname(exclude))));
-    fixes.push(runFix(`echo ${TEAM_EXCLUDE} >> ${shellQuote(exclude)}`));
-  }
-  if (problems.length) return { root, finding: finding(id, 'fail', `${name}: ${problems.join('; ')}`, { fixes }) };
-  return { root, finding: finding(id, 'ok', `${name}: ${link} links to ${team}, and ${exclude} hides it`) };
+  const count = mdFiles(dir).length;
+  const held = `${name}: ${dir} holds ${count} team ${count === 1 ? 'playbook' : 'playbooks'}`;
+  const tracked = gitOut(root, ['ls-files', '--', TEAM_DIR]);
+  if (!tracked) return { root, finding: finding(id, 'info', `${held}, but git does not track them, so teammates do not see them`) };
+  return { root, finding: finding(id, 'ok', held) };
 }
 
 /** Runs `jstack-cli check` pinned to the resolved pstack, so it reads the same files and records nothing. */
@@ -1425,7 +1515,7 @@ function diagnose() {
   const config = checkConfig(h, configDir);
   findings.push(config.finding);
   if (config.handle) findings.push(checkMode(h, configDir, config.handle));
-  const repos = config.settings ? listDir(join(configDir, DIR.repos)).filter((name) => isDir(join(configDir, DIR.repos, name))) : [];
+  const repos = Object.keys(config.settings?.repos ?? {});
   const here = findCheckout(cwd);
   const runs = [];
   for (const name of repos) {
@@ -1493,7 +1583,7 @@ const COMMANDS = {
   'playbook list': { arity: 0, run: (opts) => runList(loadContext(opts), opts) },
   'playbook show': { arity: 1, run: (opts, [name]) => runCompute(loadContext(opts), opts, name) },
   'playbook locate': { arity: 2, run: (opts, [name, quote]) => runLocate(loadContext(opts), opts, name, quote) },
-  'playbook extend': { arity: 4, writes: true, run: (opts, args) => runExtend(loadContext(opts), opts, args) },
+  'playbook extend': { arity: [3, 4], writes: true, run: (opts, args) => runExtend(loadContext(opts), opts, args) },
   'playbook new': { arity: 1, writes: true, run: (opts, args) => runNew(loadContext(opts), opts, args) },
   check: { arity: 0, run: (opts) => runCheck(loadContext(opts), opts) },
   doctor: { arity: 0, run: (opts) => runDoctor(opts) },
@@ -1504,13 +1594,13 @@ const WRITE_OPTIONS = {
   '--when': { key: 'when', dashText: true },
   '--with-file': { key: 'withFile' },
   '--from-file': { key: 'fromFile' },
-  '--layer': { key: 'layer' },
+  '--scope': { key: 'scope' },
 };
 const GROUP_VERBS = new Set(['list', 'show', 'compute', 'locate', 'extend', 'new']);
 const VERB_ALIASES = { compute: 'show' };
 
 function parseArgs(argv) {
-  const opts = { json: false, fix: false, help: false, everyRepo: false, repo: null, pstack: null, with: null, withFile: null, when: null, fromFile: null, layer: null };
+  const opts = { json: false, fix: false, help: false, everyRepo: false, repo: null, pstack: null, with: null, withFile: null, when: null, fromFile: null, scope: null };
   const words = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -1535,7 +1625,7 @@ function parseArgs(argv) {
   const verb = grouped ? (BARE ? head : rest.shift()) : head;
   const command = COMMANDS[grouped ? `playbook ${VERB_ALIASES[verb] ?? verb}` : verb];
   const args = rest;
-  if (!command || args.length !== command.arity) throw new UsageError('', { usage: true });
+  if (!command || ![command.arity].flat().includes(args.length)) throw new UsageError('', { usage: true });
   if (!command.writes && WRITE_FLAGS.some((f) => opts[f] !== null)) throw new UsageError('', { usage: true });
   if (opts.everyRepo && (command !== COMMANDS.check || opts.repo)) throw new UsageError('', { usage: true });
   if (command.writes && (opts.json || opts.fix)) throw new UsageError('', { usage: true });

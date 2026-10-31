@@ -1,29 +1,72 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "jstack-cli playbook list --json",
-  "description": "Every playbook the cascade knows, and what each layer does to it.",
+  "description": "Every root active in the context, with its kind and the active members of its family.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["repo", "owner", "org", "pstack", "layers", "playbooks"],
+  "required": [
+    "repo",
+    "owner",
+    "org",
+    "pstack",
+    "playbooks"
+  ],
   "properties": {
-    "repo": { "type": ["string", "null"] },
-    "owner": { "type": ["string", "null"] },
-    "org": { "type": ["string", "null"] },
-    "pstack": { "type": ["string", "null"], "description": "pstack version, from the plugin manifest or a folder named like a version. null when neither gives one." },
-    "layers": { "type": "array", "items": { "type": "string" }, "description": "Cascade order from config.json, lowest first." },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "owner": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "org": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pstack": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "pstack version, from the plugin manifest or a folder named like a version. null when neither gives one."
+    },
     "playbooks": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "source", "layers"],
+        "required": [
+          "name",
+          "kind",
+          "family"
+        ],
         "properties": {
-          "name": { "type": "string" },
-          "source": { "type": "string", "description": "pstack for a bundled playbook, else the layer that defines the standalone playbook." },
-          "layers": {
-            "type": "object",
-            "description": "One key per cascade layer.",
-            "additionalProperties": { "enum": ["defines", "edits", "none"] }
+          "name": {
+            "type": "string",
+            "description": "The root's stem."
+          },
+          "kind": {
+            "enum": [
+              "pstack",
+              "team",
+              "user"
+            ],
+            "description": "pstack for a bundled playbook, team for a file in the checkout's .agents/playbooks, user for a file in the config dir."
+          },
+          "family": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "A playbook file's stem: a bundled playbook's, a team file's or a user file's."
+            },
+            "description": "The active members other than the root, in apply order."
           }
         }
       }

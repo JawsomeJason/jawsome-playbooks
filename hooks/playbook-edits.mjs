@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Blocks a direct Edit or Write of an operator layer file, so playbook edits go through `playbook extend` and `playbook new`,
-// which accept only valid grammar and roll back an edit that adds a `check` problem. A file that has a problem stays open, because
-// a stale quote can only be repaired by hand. Team folders are not covered: they change through pull requests.
+// Blocks a direct Edit or Write of an operator's user playbook file, so playbook edits go through `playbook extend` and
+// `playbook new`, which accept only valid grammar and roll back an edit that adds a `check` problem. A file that has a problem
+// stays open, because a stale quote can only be repaired by hand. Team files are not covered: they change through pull requests.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-if (process.env.JSTACK_ALLOW_LAYER_EDITS === '1') process.exit(0);
+if (process.env.JSTACK_ALLOW_PLAYBOOK_EDITS === '1') process.exit(0);
 
 let input;
 try {
@@ -19,7 +19,7 @@ try {
 const file = input.tool_input?.file_path;
 if (typeof file !== 'string') process.exit(0);
 
-const LAYER_FILE = /^(?:01-user|02-orgs\/[^/]+\/02-overrides|03-repos\/[^/]+\/02-overrides)\/(?!README\.md$)[^/]+\.md$/;
+const USER_FILE = /^playbooks\/(?:(?:orgs|repos)\/[^/]+\/)?(?!README\.md$)[^/]+\.md$/;
 
 // The nearest existing ancestor is resolved, so a file that does not exist yet still resolves through its folder's symlinks.
 function real(path) {
@@ -35,11 +35,11 @@ function real(path) {
 }
 
 const config = resolve(process.env.JSTACK_CONFIG || join(homedir(), '.jstack'));
-const inLayer = [[resolve(file), config], [real(file), real(config)]].some(([path, root]) => {
+const isUserFile = [[resolve(file), config], [real(file), real(config)]].some(([path, root]) => {
   const rel = relative(root, path);
-  return !rel.startsWith('..') && LAYER_FILE.test(rel.split('\\').join('/'));
+  return !rel.startsWith('..') && USER_FILE.test(rel.split('\\').join('/'));
 });
-if (!inLayer) process.exit(0);
+if (!isUserFile) process.exit(0);
 
 const CLI = fileURLToPath(new URL('../skills/playbook/scripts/jstack.mjs', import.meta.url));
 
@@ -63,9 +63,9 @@ if (!paths) {
 }
 if (paths.some((path) => real(path) === real(file))) process.exit(0);
 process.stderr.write(
-  `${file} is a jstack layer file. Change it through the CLI so that only valid grammar lands: ` +
-    '`playbook extend <parent> <file-name> after|before|replace|in "<quote>" --with <text|->` edits a playbook, ' +
+  `${file} is a jstack user playbook file. Change it through the CLI so that only valid grammar lands: ` +
+    '`playbook extend <parent> [<file-name>] after|before|replace|in "<quote>" --with <text|->` edits a playbook, ' +
     'and `playbook new <name> --when "<sentence>" --from-file <path|->` adds a standalone one. Both run `check` and undo an edit that adds a problem. A file that has a `check` problem can be edited directly, to repair it. ' +
-    'To edit the file by hand anyway, set JSTACK_ALLOW_LAYER_EDITS=1.\n',
+    'To edit the file by hand anyway, set JSTACK_ALLOW_PLAYBOOK_EDITS=1.\n',
 );
 process.exit(2);
