@@ -197,3 +197,17 @@ test('check --every-repo finds a problem the current context cannot see, and rec
   assert.equal(read(join(w.config, 'config.json')), before);
   assert.equal(w.run(['check', '--every-repo', '--repo', 'web']).status, 2);
 });
+
+test('a stale step reference that only changes its count does not refuse an unrelated write', () => {
+  const w = world({ files: { '01-user/notes.md': '---\nextends: babysit\nwhen: Notes\n---\n\n- See babysit step 99.\n' } });
+  const r = w.run(['playbook', 'extend', 'babysit', 'zz', 'after', 'Declare the mode', '--with', 'Also this.', '--when', 'w']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(w.config, '01-user', 'zz.md')));
+});
+
+test('a spaced dash after a step number is prose, not a range', () => {
+  const w = world({ files: { '01-user/notes.md': '---\nextends: babysit\nwhen: Notes\n---\n\n- See babysit step 1 - 20 minutes of waiting.\n' } });
+  assert.equal(w.run(['check']).status, 0);
+  const tight = world({ files: { '01-user/notes.md': '---\nextends: babysit\nwhen: Notes\n---\n\n- See babysit steps 1-99.\n' } });
+  assert.equal(tight.run(['check']).status, 1);
+});
