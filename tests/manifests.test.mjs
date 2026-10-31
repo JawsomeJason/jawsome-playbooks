@@ -17,8 +17,9 @@ test('all five manifests carry the same version', () => {
   assert.deepEqual(versions, Object.fromEntries(Object.keys(versions).map((path) => [path, expected])));
 });
 
-test('the mode contract falls back to the deprecated jstack-cli, and to poteto-mode only without either command', () => {
+test('the mode contract runs playbook, and falls back to poteto-mode only without it', () => {
   const contract = readFileSync(new URL('../skills/setup/references/mode-contract.md', import.meta.url), 'utf8');
-  assert.match(contract, /`playbook` or `jstack-cli`, whichever is on `PATH`/);
-  assert.match(contract, /When neither is on `PATH`, it follows poteto-mode as written/);
+  assert.match(contract, /runs `playbook` when it is on `PATH`/);
+  assert.match(contract, /When it is not on `PATH`, it follows poteto-mode as written/);
+  assert.doesNotMatch(contract, /jstack/);
 });

@@ -22,9 +22,7 @@ Terms jawsome-playbooks' docs and skills use, in alphabetical order. Each entry 
 
 **Handoff.** A point where a playbook sends the work to another playbook, which the mode skill then computes with `playbook show` and runs. In a playbook file it registers only as a `playbooks/<stem>.md` path, or as a playbook named right after `run`, `per`, `route ... to` or `hand ... to`, written as a bold title, a capitalized title or a kebab-case stem. A name resolves to its root's family. A lowercase `run babysit` does not register, and `check` never reads the handoff wording inside pstack's own text. [jawsome-playbooks]
 
-**jawsome-playbooks.** Called jstack before 0.8.0, which renamed it. A plugin that extends pstack-claude's bundled playbooks with team and personal playbook files, ordered by their `extends` chains, and checks them against each pstack release. It needs pstack-claude, because project playbooks and `check-playbooks.mjs` exist only in the port. It ships the `playbook`, `learn` and `setup` skills. [jawsome-playbooks]
-
-**`jstack-cli`.** A deprecated alias of the `playbook` command, removed in 0.9.0, with the same flags and output. It spells the playbook commands `jstack-cli playbook show` and so on, and keeps `jstack-cli check` and `jstack-cli doctor` as they are. [jawsome-playbooks]
+**jawsome-playbooks.** A plugin that extends pstack-claude's bundled playbooks with team and personal playbook files, ordered by their `extends` chains, and checks them against each pstack release. It needs pstack-claude, because project playbooks and `check-playbooks.mjs` exist only in the port. It ships the `playbook`, `learn` and `setup` skills. Formerly named jstack. [jawsome-playbooks]
 
 **Mode skill.** The operator's `<handle>-mode` skill, which pstack's automate-me writes during `setup`. It runs poteto-mode first, takes each playbook's steps from `playbook show` instead of applying project playbooks by hand, and names every override by the stem of the file that made it. [jawsome-playbooks]
 

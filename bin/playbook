@@ -1,3 +1,2 @@
 #!/usr/bin/env node
-globalThis.playbookBin = 'playbook';
-await import('../skills/playbook/scripts/playbook.mjs');
+import '../skills/playbook/scripts/playbook.mjs';

@@ -31,17 +31,17 @@ const valid = (name, value) => assert.deepEqual(errors(value, schema(name), sche
 test('show, list, locate and check --json match their schemas', () => {
   const w = world({ files: { 'playbooks/landing.md': '---\nwhen: landing\n---\n\n1. Then hand it to babysit-tester.\n' } });
   const json = (args, opts) => JSON.parse(w.run([...args, '--json'], opts).stdout);
-  valid('compute', json(['playbook', 'show', 'babysit']));
-  valid('compute', json(['playbook', 'show', 'landing']));
-  valid('list', json(['playbook', 'list']));
-  valid('locate', json(['playbook', 'locate', 'babysit', 'Work the merge frontier']));
-  valid('locate', json(['playbook', 'locate', 'babysit', 'the trunk ruleset']));
+  valid('compute', json(['show', 'babysit']));
+  valid('compute', json(['show', 'landing']));
+  valid('list', json(['list']));
+  valid('locate', json(['locate', 'babysit', 'Work the merge frontier']));
+  valid('locate', json(['locate', 'babysit', 'the trunk ruleset']));
   valid('check', json(['check']));
   valid('check', json(['check'], { cwd: w.outside }));
 });
 
 test('the schemas reject an output that carries a layer name or a key they do not list', () => {
-  const out = JSON.parse(world().run(['playbook', 'show', 'babysit', '--json']).stdout);
+  const out = JSON.parse(world().run(['show', 'babysit', '--json']).stdout);
   assert.notDeepEqual(errors({ ...out, steps: [{ ...out.steps[0], kind: 'org.standard' }] }, schema('compute'), schema('compute')), []);
   assert.notDeepEqual(errors({ ...out, layers: [] }, schema('compute'), schema('compute')), []);
 });

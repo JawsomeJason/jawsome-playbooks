@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { BIN, FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs';
+import { FIXTURES, PSTACK, git, lines, tempDir, world } from './helpers.mjs';
 
 const OK_LINE = "Every project playbook matches this pstack's playbooks.";
 const readLayers = (config) => JSON.parse(readFileSync(join(config, 'config.json'), 'utf8'));
@@ -40,7 +40,7 @@ ok
 
 test('show applies a family in topological order and tags each step with the stems that wrote and edited it', () => {
   const w = world();
-  const r = w.run(['playbook', 'compute', 'babysit']);
+  const r = w.run(['compute', 'babysit']);
   assert.equal(r.stderr, '');
   assert.equal(r.stdout, BABYSIT);
   assert.equal(r.status, 0);
@@ -48,7 +48,7 @@ test('show applies a family in topological order and tags each step with the ste
 
 test('show --json carries the same family as data', () => {
   const w = world();
-  const r = w.run(['playbook', 'compute', 'babysit', '--json']);
+  const r = w.run(['compute', 'babysit', '--json']);
   assert.equal(r.status, 0);
   assert.deepEqual(JSON.parse(r.stdout), {
     playbook: 'babysit',
@@ -93,15 +93,15 @@ test('show --json carries the same family as data', () => {
 test('show by any member of a family prints the root family and says which member was asked for', () => {
   const w = world();
   for (const name of ['babysit-tester', 'babysitting-an-acme-pr', 'babysitting-an-acme-pr-web']) {
-    const r = w.run(['playbook', 'show', name]);
+    const r = w.run(['show', name]);
     assert.equal(r.status, 0, name);
     assert.equal(r.stdout, BABYSIT.replace('\n\n1. ', `\n\n${name} is part of the babysit family.\n\n1. `), name);
-    assert.equal(JSON.parse(w.run(['playbook', 'show', name, '--json']).stdout).asked, name);
+    assert.equal(JSON.parse(w.run(['show', name, '--json']).stdout).asked, name);
   }
 });
 
 test('a playbook with no numbered steps takes each bold-lead paragraph as a step', () => {
-  const r = world().run(['playbook', 'compute', 'opening-a-pr']);
+  const r = world().run(['compute', 'opening-a-pr']);
   assert.equal(r.stdout, `# opening-a-pr (web · acme-eng · pstack 1.0.0)
 
 1. **Commits.** Commit in small units.   [opening-a-pr]
@@ -122,7 +122,7 @@ ok
 });
 
 test('a chain of user files edits a standalone playbook, each anchored on what its ancestors leave', () => {
-  const r = world().run(['playbook', 'compute', 'triage']);
+  const r = world().run(['compute', 'triage']);
   assert.equal(r.stdout, `# triage (web · acme-eng · pstack 1.0.0)
 
 1. Reproduce the bug.   [triage]
@@ -142,14 +142,14 @@ ok
 
 test('scope folders decide where a user file is active, never its order', () => {
   const w = world();
-  const outside = w.run(['playbook', 'show', 'triage', '--json'], { cwd: w.outside });
+  const outside = w.run(['show', 'triage', '--json'], { cwd: w.outside });
   assert.deepEqual(JSON.parse(outside.stdout).family.map((m) => m.stem), ['triage']);
   const other = world({ remote: 'git@example.com:acme-eng/api.git' });
-  assert.deepEqual(JSON.parse(other.run(['playbook', 'show', 'triage', '--json']).stdout).family.map((m) => m.stem), ['triage', 'triage-acme']);
+  assert.deepEqual(JSON.parse(other.run(['show', 'triage', '--json']).stdout).family.map((m) => m.stem), ['triage', 'triage-acme']);
 });
 
 test('a standalone team playbook starts from its own numbered steps, and a user file extends it', () => {
-  const r = world().run(['playbook', 'compute', 'releasing-web']);
+  const r = world().run(['compute', 'releasing-web']);
   assert.equal(r.stdout, `# releasing-web (web · acme-eng · pstack 1.0.0)
 
 1. Tag the release.   [releasing-web]
@@ -173,7 +173,7 @@ test('a user file whose parent is active only in another repo is dormant here: i
     'check passed: pstack 1.0.0',
   ]);
   assert.equal(r.status, 0);
-  assert.match(w.run(['playbook', 'show', 'releasing-web-tester'], { cwd: w.outside }).stderr, /releasing-web-tester is dormant here/);
+  assert.match(w.run(['show', 'releasing-web-tester'], { cwd: w.outside }).stderr, /releasing-web-tester is dormant here/);
 });
 
 test('apply order breaks ties team before user, then by stem, so sibling In text lands in that order', () => {
@@ -184,11 +184,11 @@ test('apply order breaks ties team before user, then by stem, so sibling In text
     },
     team: { 'zz-acme.md': '---\nextends: babysit\nwhen: w\nsource: proposed\n---\n\n- **In** "Work the merge frontier" TEAM.\n' },
   });
-  const out = JSON.parse(w.run(['playbook', 'show', 'babysit', '--json']).stdout);
+  const out = JSON.parse(w.run(['show', 'babysit', '--json']).stdout);
   assert.equal(out.steps[2].text, '**Work the merge frontier.** The lowest open PR matters first. TEAM. AA. ZZ.');
   assert.deepEqual(out.family.map((m) => m.stem), ['babysit', 'babysitting-an-acme-pr', 'zz-acme', 'aa-mine', 'babysit-tester', 'babysitting-an-acme-pr-tester', 'babysitting-an-acme-pr-web', 'zz-mine']);
   assert.deepEqual(out.overrides.filter((o) => o.step === 3).map((o) => [o.file, o.after]), [['zz-acme', undefined], ['aa-mine', ['zz-acme']], ['zz-mine', ['zz-acme', 'aa-mine']]]);
-  assert.match(w.run(['playbook', 'show', 'babysit']).stdout, /^- step 3: zz-mine added to "Work the merge frontier" \(babysit, after zz-acme, aa-mine\)$/m);
+  assert.match(w.run(['show', 'babysit']).stdout, /^- step 3: zz-mine added to "Work the merge frontier" \(babysit, after zz-acme, aa-mine\)$/m);
 });
 
 test('a quote sees only what its ancestors wrote, and check names the file that wrote it', () => {
@@ -198,7 +198,7 @@ test('a quote sees only what its ancestors wrote, and check names the file that 
   assert.equal(r.status, 1);
   writeFileSync(join(w.config, 'playbooks/sibling.md'), '---\nextends: babysit-tester\nwhen: w\n---\n\n- **In** "Merge once approved" Then tag it.\n');
   assert.equal(w.run(['check']).status, 0);
-  assert.match(w.run(['playbook', 'show', 'babysit']).stdout, /Merge once approved and green\. Then tag it\. {3}\[babysit ~ babysit-tester ~ sibling\]/);
+  assert.match(w.run(['show', 'babysit']).stdout, /Merge once approved and green\. Then tag it\. {3}\[babysit ~ babysit-tester ~ sibling\]/);
 });
 
 test('two siblings that Replace the same words fail check, naming both files', () => {
@@ -221,7 +221,7 @@ test('a cycle among user files fails check and names the cycle, self-extension i
   assert.ok(out.includes(`${w.config}/playbooks/loop-a.md:2: extends a cycle: loop-a -> loop-b -> loop-a`), out.join('\n'));
   assert.ok(out.includes(`${w.config}/playbooks/loop-b.md:2: extends a cycle: loop-b -> loop-a -> loop-b`), out.join('\n'));
   assert.ok(out.includes(`${w.config}/playbooks/self.md:2: extends a cycle: self -> self`), out.join('\n'));
-  assert.equal(w.run(['playbook', 'show', 'babysit']).status, 1);
+  assert.equal(w.run(['show', 'babysit']).status, 1);
 });
 
 test('a missing parent fails check; a stem that takes a bundled or an active name fails with a rename hint', () => {
@@ -265,39 +265,39 @@ test('a layer key and the numbered config layout are retired, and check says wha
   assert.ok(out.includes(`${w.config}/01-user:1: numbered layer folders are retired; move each file into playbooks/ (playbooks/orgs/<org>/ or playbooks/repos/<repo>/ to limit where it applies) under a unique name, as playbooks.md describes`), out.join('\n'));
 });
 
-test('the config dir is ~/.jawsome-playbooks, and ~/.jstack is read only while the new one is missing, with an info line from check', () => {
+test('the config dir is ~/.jawsome-playbooks, and the ~/.jstack folder from before 0.8.0 is ignored', () => {
   const w = world();
   const legacy = join(w.home, '.jstack');
   renameSync(w.config, legacy);
-  const homeDefault = { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: null };
+  const homeDefault = { PLAYBOOKS_CONFIG: null };
   const old = w.run(['check'], { env: homeDefault });
-  assert.equal(old.status, 0, old.stdout + old.stderr);
-  assert.ok(lines(old.stdout).includes(`info: ${legacy}:1: ~/.jstack is the config dir from before 0.8.0 and is read until 0.9.0; move it to ~/.jawsome-playbooks`), old.stdout);
-  assert.match(w.run(['playbook', 'show', 'babysit'], { env: homeDefault }).stdout, /\[babysit-tester\]/);
+  assert.doesNotMatch(old.stdout, /\.jstack/);
+  assert.doesNotMatch(w.run(['show', 'babysit'], { env: homeDefault }).stdout, /\[babysit-tester\]/);
   cpSync(legacy, join(w.home, '.jawsome-playbooks'), { recursive: true });
-  writeFileSync(join(legacy, 'playbooks', 'broken.md'), '---\nextends: babysit\n---\n\n- A note.\n');
-  const current = w.run(['check'], { env: homeDefault });
-  assert.equal(current.status, 0, current.stdout);
-  assert.doesNotMatch(current.stdout, /\.jstack/);
+  assert.match(w.run(['show', 'babysit'], { env: homeDefault }).stdout, /\[babysit-tester\]/);
 });
 
-test('the JSTACK_* names of the PLAYBOOKS_* variables still work, and the new names win', () => {
+test('the JSTACK_* names from before 0.8.0 and the old usage-log folder are ignored', () => {
   const w = world();
-  const expected = w.run(['playbook', 'show', 'babysit']).stdout;
+  const expected = w.run(['show', 'babysit']).stdout;
   assert.match(expected, /\[babysit-tester\]/);
-  const legacy = w.run(['playbook', 'show', 'babysit'], { env: { PLAYBOOKS_CONFIG: null, PLAYBOOKS_PSTACK_DIR: null, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK } });
-  assert.equal(legacy.stdout, expected, legacy.stderr);
-  const both = w.run(['playbook', 'show', 'babysit'], { env: { JSTACK_CONFIG: join(w.root, 'missing'), JSTACK_PSTACK_DIR: join(w.root, 'nothing') } });
-  assert.equal(both.stdout, expected, both.stderr);
+  const legacy = w.run(['show', 'babysit'], { env: { PLAYBOOKS_CONFIG: null, JSTACK_CONFIG: w.config } });
+  assert.doesNotMatch(legacy.stdout, /\[babysit-tester\]/);
+  const noPstack = w.run(['show', 'babysit'], { env: { PLAYBOOKS_PSTACK_DIR: null, JSTACK_PSTACK_DIR: PSTACK } });
+  assert.doesNotMatch(noPstack.stdout, /\[babysit-tester\]/);
   writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...readLayers(w.config), telemetry: true }));
   const state = join(w.root, 'state');
-  w.run(['playbook', 'show', 'babysit'], { env: { JSTACK_STATE: state } });
-  assert.equal(lines(readFileSync(join(state, 'usage.jsonl'), 'utf8')).length, 1);
+  const xdg = join(w.root, 'xdg');
+  mkdirSync(join(xdg, 'jstack'), { recursive: true });
+  w.run(['show', 'babysit'], { env: { JSTACK_STATE: state, XDG_STATE_HOME: xdg } });
+  assert.equal(existsSync(join(state, 'usage.jsonl')), false);
+  assert.equal(existsSync(join(xdg, 'jstack', 'usage.jsonl')), false);
+  assert.equal(lines(readFileSync(join(xdg, 'jawsome-playbooks', 'usage.jsonl'), 'utf8')).length, 1);
 });
 
 test('with no config the playbook is pstack alone', () => {
   const w = world({ checkout: false });
-  const r = w.run(['playbook', 'compute', 'feature'], { env: { PLAYBOOKS_CONFIG: join(w.root, 'missing') } });
+  const r = w.run(['compute', 'feature'], { env: { PLAYBOOKS_CONFIG: join(w.root, 'missing') } });
   assert.equal(r.stdout, `# feature (pstack 1.0.0)
 
 1. Name the data shape.   [feature]
@@ -339,7 +339,7 @@ when: handing work between web playbooks
 
 test('show withholds a playbook whose file hands off to a playbook nothing defines', () => {
   const w = world(HANDOFFS);
-  const r = w.run(['playbook', 'compute', 'handoffs']);
+  const r = w.run(['compute', 'handoffs']);
   assert.equal(r.stdout, `# handoffs (web · acme-eng · pstack 1.0.0)
 
 No steps: a file in the handoffs family has problems, so some of its edits would be lost. Fix the files below, then run \`playbook check\` until it passes.
@@ -433,7 +433,7 @@ when: writing prose
     },
   });
   assert.equal(w.run(['check']).status, 0);
-  const show = w.run(['playbook', 'show', 'prose']);
+  const show = w.run(['show', 'prose']);
   assert.equal(show.status, 0);
   assert.match(show.stdout, /^1\. Open one PR per feature\./m);
 });
@@ -480,7 +480,7 @@ when: landing a PR
 
 test('a handoff to a derived name resolves to its root family, and one to a dormant file is info', () => {
   const w = world({ files: { 'playbooks/landing.md': '---\nwhen: landing\n---\n\n1. Then hand it to babysit-tester.\n2. Once it ships, run releasing-web-tester.\n' } });
-  const r = w.run(['playbook', 'show', 'landing', '--json']);
+  const r = w.run(['show', 'landing', '--json']);
   assert.equal(r.status, 0, r.stdout);
   assert.deepEqual(JSON.parse(r.stdout).handoffs, [
     { playbook: 'babysit', steps: [1], inNotes: false },
@@ -509,7 +509,7 @@ when: building a feature
 });
 
 test('list shows each root with its kind and its active family', () => {
-  const r = world().run(['playbook', 'list']);
+  const r = world().run(['list']);
   assert.equal(r.stdout, `web (acme-eng · pstack 1.0.0)
 playbook       kind    family
 babysit        pstack  babysitting-an-acme-pr, babysit-tester, babysitting-an-acme-pr-tester, babysitting-an-acme-pr-web
@@ -522,7 +522,7 @@ triage         user    triage-acme, triage-web
 });
 
 test('list --json names each root, its kind and its family in apply order', () => {
-  const out = JSON.parse(world().run(['playbook', 'list', '--json']).stdout);
+  const out = JSON.parse(world().run(['list', '--json']).stdout);
   assert.deepEqual(out.playbooks.find((p) => p.name === 'releasing-web'), { name: 'releasing-web', kind: 'team', family: ['releasing-web-tester'] });
   assert.deepEqual(out.playbooks.find((p) => p.name === 'triage'), { name: 'triage', kind: 'user', family: ['triage-acme', 'triage-web'] });
   assert.equal(out.layers, undefined);
@@ -604,7 +604,7 @@ test('a user file may extend a user standalone, whatever the order of their name
     },
   });
   assert.equal(w.run(['check']).status, 0);
-  assert.match(w.run(['playbook', 'show', 'zzz-flow']).stdout, /^2\. Then rest\. {3}\[aaa-flow\]$/m);
+  assert.match(w.run(['show', 'zzz-flow']).stdout, /^2\. Then rest\. {3}\[aaa-flow\]$/m);
 });
 
 test('a pstack checker failure with no playbook problems says so in the last line', () => {
@@ -628,7 +628,7 @@ test('check flags a layers key, since extends sets the order', () => {
 
 test('compute withholds the steps when a file touching the playbook has problems, and exits 1', () => {
   const w = world(BROKEN);
-  const r = w.run(['playbook', 'compute', 'babysit']);
+  const r = w.run(['compute', 'babysit']);
   assert.match(r.stdout, /^# babysit \(web · acme-eng · pstack 1\.0\.0\)$/m);
   assert.match(r.stdout, /^No steps: .*`playbook check`/m);
   assert.doesNotMatch(r.stdout, /^1\. /m);
@@ -637,14 +637,14 @@ test('compute withholds the steps when a file touching the playbook has problems
   assert.ok(r.stdout.includes(`${w.config}/playbooks/gone.md:1: broken link -> ../nowhere.md`), r.stdout);
   assert.ok(!r.stdout.includes('solo.md'), 'problems in files that target other playbooks stay out');
   assert.equal(r.status, 1);
-  const j = JSON.parse(w.run(['playbook', 'compute', 'babysit', '--json']).stdout);
+  const j = JSON.parse(w.run(['compute', 'babysit', '--json']).stdout);
   assert.deepEqual([j.steps, j.notes, j.overrides, j.handoffs], [[], [], [], []]);
   assert.ok(j.problems.length > 0);
 });
 
 test('a dangling link in .agents/playbooks is reported, not a crash, and skips pstack\'s checker', () => {
   const w = world({ links: { '.agents/playbooks/stale.md': '../gone.md' } });
-  const r = w.run(['playbook', 'compute', 'babysit']);
+  const r = w.run(['compute', 'babysit']);
   assert.ok(r.stdout.includes('.agents/playbooks/stale.md:1: broken link -> ../gone.md'), r.stdout);
   assert.match(r.stdout, /pstack check-playbooks:\nnot run: broken link in \.agents\/playbooks\n$/);
   assert.match(r.stdout, /^1\. Check the team's merge calendar\./m);
@@ -655,7 +655,7 @@ test('a new pstack version that passes check is recorded in config.json', () => 
   const w = world();
   const written = readFileSync(join(w.config, 'config.json'), 'utf8');
   setPstack(w.config, '0.9.0');
-  const r = w.run(['playbook', 'compute', 'babysit']);
+  const r = w.run(['compute', 'babysit']);
   assert.equal(r.stdout, BABYSIT);
   assert.equal(r.status, 0);
   assert.equal(
@@ -668,7 +668,7 @@ test('a new pstack version that passes check is recorded in config.json', () => 
 test('a new pstack version that fails check stops compute and records nothing', () => {
   const w = world(BROKEN);
   setPstack(w.config, '0.9.0');
-  const r = w.run(['playbook', 'compute', 'babysit']);
+  const r = w.run(['compute', 'babysit']);
   assert.ok(!r.stdout.includes('# babysit'), r.stdout);
   assert.ok((r.stdout + r.stderr).includes(`${w.config}/playbooks/broken.md:7: quote not found: "no such words"`));
   assert.equal(r.status, 1);
@@ -690,7 +690,7 @@ test('check --pstack checks another installed version by name or path without wr
 
 test('--repo outside a checkout reads the team files from the checkout config.json records', () => {
   const w = world();
-  const r = w.run(['playbook', 'compute', 'babysit', '--repo', 'web'], { cwd: w.outside });
+  const r = w.run(['compute', 'babysit', '--repo', 'web'], { cwd: w.outside });
   assert.equal(r.stdout, BABYSIT);
   assert.equal(r.status, 0);
 });
@@ -699,12 +699,12 @@ test('a worktree resolves to its main checkout', () => {
   const w = world();
   const tree = join(w.root, 'web-tree');
   git(w.repo, ['worktree', 'add', '-q', tree, '-b', 'side']);
-  const r = w.run(['playbook', 'compute', 'babysit'], { cwd: tree });
+  const r = w.run(['compute', 'babysit'], { cwd: tree });
   assert.equal(r.stdout, BABYSIT);
 });
 
 test('an https remote resolves owner and repo too', () => {
-  const r = world({ remote: 'https://example.com/acme-eng/web.git' }).run(['playbook', 'compute', 'babysit']);
+  const r = world({ remote: 'https://example.com/acme-eng/web.git' }).run(['compute', 'babysit']);
   assert.equal(r.stdout, BABYSIT);
 });
 
@@ -714,7 +714,7 @@ test('without PLAYBOOKS_PSTACK_DIR the newest pstack under a home plugin cache w
   mkdirSync(cache, { recursive: true });
   symlinkSync(join(FIXTURES, 'pstack', '1.0.0'), join(cache, '1.9.0'));
   symlinkSync(join(FIXTURES, 'pstack', '1.1.0'), join(cache, '1.10.0'));
-  const r = w.run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
+  const r = w.run(['list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.10\.0\)$/m);
   assert.equal(r.status, 0);
 });
@@ -739,19 +739,19 @@ function cachedHome(recorded) {
 }
 
 test('without PLAYBOOKS_PSTACK_DIR the install record picks the active pstack over a newer cached one', () => {
-  const r = cachedHome('1.9.0').run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
+  const r = cachedHome('1.9.0').run(['list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.9\.0\)$/m);
   assert.equal(r.status, 0);
 });
 
 test('an install record whose folder is gone falls back to the newest cached pstack', () => {
-  const r = cachedHome('1.8.0').run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
+  const r = cachedHome('1.8.0').run(['list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.10\.0\)$/m);
   assert.equal(r.status, 0);
 });
 
 test('PLAYBOOKS_PSTACK_DIR wins over the install record', () => {
-  const r = cachedHome('1.9.0').run(['playbook', 'list']);
+  const r = cachedHome('1.9.0').run(['list']);
   assert.match(r.stdout, /^web \(acme-eng · pstack 1\.0\.0\)$/m);
   assert.equal(r.status, 0);
 });
@@ -781,7 +781,7 @@ test('a pstack folder whose name is no version takes its version from the plugin
   for (const manifest of ['.claude-plugin/plugin.json', '.codex-plugin/plugin.json', '.muse-plugin/plugin.json', 'package.json']) {
     const w = world();
     const env = { PLAYBOOKS_PSTACK_DIR: namedPstack(w, { [manifest]: { name: 'pstack', version: '2.3.4' } }) };
-    assert.match(w.run(['playbook', 'list'], { env }).stdout, /^web \(acme-eng · pstack 2\.3\.4\)$/m, manifest);
+    assert.match(w.run(['list'], { env }).stdout, /^web \(acme-eng · pstack 2\.3\.4\)$/m, manifest);
     assert.match(w.run(['check'], { env }).stdout, /^check passed: pstack 2\.3\.4$/m, manifest);
     assert.equal(readLayers(w.config).pstack, '2.3.4', manifest);
   }
@@ -791,7 +791,7 @@ test('a pstack with no version anywhere is named by its path and never recorded'
   const w = world();
   const dir = namedPstack(w, { '.claude-plugin/plugin.json': { name: 'pstack' } });
   const env = { PLAYBOOKS_PSTACK_DIR: dir };
-  assert.match(w.run(['playbook', 'list'], { env }).stdout, new RegExp(`^web \\(acme-eng · pstack ${dir}\\)$`, 'm'));
+  assert.match(w.run(['list'], { env }).stdout, new RegExp(`^web \\(acme-eng · pstack ${dir}\\)$`, 'm'));
   const r = w.run(['check'], { env });
   assert.match(r.stdout, new RegExp(`^check passed: pstack ${dir}$`, 'm'));
   assert.equal(r.status, 0);
@@ -800,14 +800,14 @@ test('a pstack with no version anywhere is named by its path and never recorded'
 });
 
 test('no pstack found is a usage error that names the variable to set', () => {
-  const r = world().run(['playbook', 'list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
+  const r = world().run(['list'], { env: { PLAYBOOKS_PSTACK_DIR: '' } });
   assert.match(r.stderr, /PLAYBOOKS_PSTACK_DIR/);
   assert.equal(r.status, 2);
 });
 
 test('locate names the step, the stems that wrote and edited it, and the file to extend from the writer of the quoted words', () => {
   const w = world();
-  const r = w.run(['playbook', 'locate', 'babysit', 'Work the merge frontier']);
+  const r = w.run(['locate', 'babysit', 'Work the merge frontier']);
   assert.equal(r.stderr, '');
   assert.equal(
     r.stdout,
@@ -820,13 +820,13 @@ babysit wrote the quoted words. Write the edit in:
 `,
   );
   assert.equal(r.status, 0);
-  const team = w.run(['playbook', 'locate', 'babysit', 'Snapshot diffs count']);
+  const team = w.run(['locate', 'babysit', 'Snapshot diffs count']);
   assert.match(team.stdout, /^babysitting-an-acme-pr wrote the quoted words\. Write the edit in:\n- .*\/playbooks\/babysitting-an-acme-pr-tester\.md \(exists\), extending babysitting-an-acme-pr$/m);
 });
 
 test('locate sends an edit to words a user file wrote back to that file', () => {
   const w = world();
-  const r = w.run(['playbook', 'locate', 'babysit-tester', 'the trunk ruleset', '--json']);
+  const r = w.run(['locate', 'babysit-tester', 'the trunk ruleset', '--json']);
   assert.equal(r.status, 0);
   assert.deepEqual(JSON.parse(r.stdout), {
     playbook: 'babysit',
@@ -843,51 +843,44 @@ test('locate sends an edit to words a user file wrote back to that file', () => 
     writers: ['babysitting-an-acme-pr-tester'],
     edit: { path: join(w.config, 'playbooks', 'babysitting-an-acme-pr-tester.md'), exists: true, own: true, extends: null },
   });
-  const md = w.run(['playbook', 'locate', 'babysit', 'the trunk ruleset']).stdout;
+  const md = w.run(['locate', 'babysit', 'the trunk ruleset']).stdout;
   assert.match(md, /^- .*babysitting-an-acme-pr-tester\.md \(exists; it wrote these words, so change its text there\)$/m);
 });
 
 test('locate exits 1 when the quote finds no step or more than one', () => {
   const w = world();
-  const missing = w.run(['playbook', 'locate', 'babysit', 'no such words']);
+  const missing = w.run(['locate', 'babysit', 'no such words']);
   assert.equal(missing.stdout, 'quote not found: "no such words"\n');
   assert.equal(missing.status, 1);
-  const ambiguous = w.run(['playbook', 'locate', 'babysit', 'the']);
+  const ambiguous = w.run(['locate', 'babysit', 'the']);
   assert.match(ambiguous.stdout, /^quote matches steps .+; make it longer\n$/);
   assert.equal(ambiguous.status, 1);
 });
 
 test('an unknown playbook and a bad command are usage errors', () => {
   const w = world();
-  const unknown = w.run(['playbook', 'compute', 'nope']);
+  const unknown = w.run(['compute', 'nope']);
   assert.match(unknown.stderr, /no playbook named nope/);
   assert.equal(unknown.status, 2);
   const bad = w.run(['frobnicate']);
-  assert.match(bad.stderr, /usage: jstack-cli/);
+  assert.match(bad.stderr, /usage: playbook/);
   assert.equal(bad.status, 2);
   const help = w.run(['--help']);
-  assert.match(help.stdout, /usage: jstack-cli/);
+  assert.match(help.stdout, /usage: playbook/);
   assert.equal(help.status, 0);
 });
 
-test('bin/jstack-cli runs through a symlink placed on PATH', () => {
-  const dir = tempDir();
-  symlinkSync(BIN, join(dir, 'jstack-cli'));
-  const r = spawnSync(join(dir, 'jstack-cli'), ['--help'], { encoding: 'utf8', env: { ...process.env, PLAYBOOKS_PSTACK_DIR: PSTACK } });
-  assert.match(r.stdout, /usage: jstack-cli/);
-  assert.equal(r.status, 0);
-});
 
 test('compute logs one line per read only when telemetry is on', () => {
   const w = world();
   const state = join(w.root, 'state');
   const log = join(state, 'usage.jsonl');
-  w.run(['playbook', 'compute', 'babysit'], { env: { PLAYBOOKS_STATE: state } });
+  w.run(['compute', 'babysit'], { env: { PLAYBOOKS_STATE: state } });
   assert.equal(existsSync(log), false, 'telemetry is off by default');
   writeFileSync(join(w.config, 'config.json'), JSON.stringify({ ...readLayers(w.config), telemetry: true }));
-  w.run(['playbook', 'compute', 'babysit'], { env: { PLAYBOOKS_STATE: state } });
-  w.run(['playbook', 'compute', 'triage', '--json'], { env: { PLAYBOOKS_STATE: state } });
-  w.run(['playbook', 'compute', 'no-such-playbook'], { env: { PLAYBOOKS_STATE: state } });
+  w.run(['compute', 'babysit'], { env: { PLAYBOOKS_STATE: state } });
+  w.run(['compute', 'triage', '--json'], { env: { PLAYBOOKS_STATE: state } });
+  w.run(['compute', 'no-such-playbook'], { env: { PLAYBOOKS_STATE: state } });
   const reads = lines(readFileSync(log, 'utf8')).map((l) => JSON.parse(l));
   assert.deepEqual(reads.map(({ playbook, repo, org, pstack }) => ({ playbook, repo, org, pstack })), [
     { playbook: 'babysit', repo: 'web', org: 'acme', pstack: '1.0.0' },
@@ -915,24 +908,24 @@ test('a config dir that still has layers.json names the rename', () => {
 test('an unresolved extends fails show for every playbook, and says the steps may lack its edits', () => {
   const w = world({ files: { 'playbooks/typo.md': '---\nextends: babysitt\nwhen: A typo\n---\n\n- **In** "Declare the mode" Be brief.\n' } });
   for (const name of ['babysit', 'feature']) {
-    const r = w.run(['playbook', 'show', name]);
+    const r = w.run(['show', name]);
     assert.equal(r.status, 1, name);
     assert.match(r.stdout, /^1\. /m, `${name} still prints its steps`);
     assert.match(r.stdout, /a file has an extends that names no playbook, so it edits nothing.*may belong in these steps/);
     assert.match(r.stdout, /typo\.md:2: extends babysitt, which no playbook defines/);
     assert.doesNotMatch(r.stdout, /Be brief/);
   }
-  const json = JSON.parse(w.run(['playbook', 'show', 'feature', '--json']).stdout);
+  const json = JSON.parse(w.run(['show', 'feature', '--json']).stdout);
   assert.ok(json.steps.length > 0);
   assert.match(json.problems[0].message, /extends babysitt/);
 });
 
 test('a file that partly resolves withholds what it touches, and only warns on the rest', () => {
   const w = world({ files: { 'playbooks/half.md': '---\nextends: babysit, babysitt\nwhen: Half\n---\n\n- **In** "Declare the mode" Be brief.\n' } });
-  const touched = w.run(['playbook', 'show', 'babysit']);
+  const touched = w.run(['show', 'babysit']);
   assert.equal(touched.status, 1);
   assert.match(touched.stdout, /^No steps: /m);
-  const other = w.run(['playbook', 'show', 'feature']);
+  const other = w.run(['show', 'feature']);
   assert.equal(other.status, 1);
   assert.match(other.stdout, /^1\. /m);
   assert.match(other.stdout, /half\.md:2: extends babysitt/);

@@ -3,14 +3,12 @@
 // `playbook new`, which accept only valid grammar and roll back an edit that adds a `check` problem. A file that has a problem
 // stays open, because a stale quote can only be repaired by hand. Team files are not covered: they change through pull requests.
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// The JSTACK_ names and ~/.jstack are read until 0.9.0, as the playbook script reads them.
-const env = (name, legacy = name) => process.env[`PLAYBOOKS_${name}`] ?? process.env[`JSTACK_${legacy}`];
-if (env('ALLOW_EDITS', 'ALLOW_PLAYBOOK_EDITS') === '1') process.exit(0);
+if (process.env.PLAYBOOKS_ALLOW_EDITS === '1') process.exit(0);
 
 let input;
 try {
@@ -36,9 +34,7 @@ function real(path) {
   }
 }
 
-const current = join(homedir(), '.jawsome-playbooks');
-const legacy = join(homedir(), '.jstack');
-const config = resolve(env('CONFIG') || (!existsSync(current) && existsSync(legacy) ? legacy : current));
+const config = resolve(process.env.PLAYBOOKS_CONFIG || join(homedir(), '.jawsome-playbooks'));
 const isUserFile = [[resolve(file), config], [real(file), real(config)]].some(([path, root]) => {
   const rel = relative(root, path);
   return !rel.startsWith('..') && USER_FILE.test(rel.split('\\').join('/'));
