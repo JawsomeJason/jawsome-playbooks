@@ -20,7 +20,7 @@ test('reading an installed pstack playbook is blocked with the compute command t
 
 test('layer files, pstack checkouts, listings and playbook itself pass', () => {
   for (const [tool, input] of [
-    ['Read', { file_path: '/home/sam/.jstack/playbooks/feature-sam.md' }],
+    ['Read', { file_path: '/home/sam/.jawsome-playbooks/playbooks/feature-sam.md' }],
     ['Read', { file_path: '/home/sam/code/pstack/skills/poteto-mode/playbooks/feature.md' }],
     ['Bash', { command: 'ls /home/sam/.claude/plugins/cache/pstack-claude/pstack/1.0.0/skills/poteto-mode/playbooks/' }],
     ['Bash', { command: `PLAYBOOKS_PSTACK_DIR=x jstack-cli check # ${BUNDLED}` }],
