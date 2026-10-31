@@ -1,7 +1,7 @@
 {
   "name": "jawsome-playbooks",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release. Pi package of the Claude Code plugin.",
   "license": "MIT",
   "keywords": ["pi-package", "pstack", "poteto-mode", "playbooks"],
