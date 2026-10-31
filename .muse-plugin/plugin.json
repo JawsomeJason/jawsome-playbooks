@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "jstack",
-  "displayName": "jstack",
+  "name": "jawsome-playbooks",
+  "displayName": "jawsome-playbooks",
   "version": "0.7.0",
   "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release. Muse port of the Claude Code plugin.",
   "compat": {
@@ -13,6 +13,11 @@
       {
         "id": "playbook",
         "path": "skills/playbook/SKILL.md",
+        "enabledDefault": true
+      },
+      {
+        "id": "learn",
+        "path": "skills/learn/SKILL.md",
         "enabledDefault": true
       },
       {

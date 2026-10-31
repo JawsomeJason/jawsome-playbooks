@@ -1,5 +1,5 @@
 {
-  "name": "jstack",
+  "name": "jawsome-playbooks",
   "description": "Team and personal playbooks that extend pstack-claude's poteto-mode",
   "owner": {
     "name": "Jason Featheringham",
@@ -7,11 +7,11 @@
   },
   "plugins": [
     {
-      "name": "jstack",
+      "name": "jawsome-playbooks",
       "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release.",
       "version": "0.7.0",
       "source": "./",
-      "skills": ["./skills/playbook", "./skills/setup"]
+      "skills": ["./skills/playbook", "./skills/learn", "./skills/setup"]
     }
   ]
 }

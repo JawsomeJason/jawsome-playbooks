@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "jstack-cli doctor --json",
+  "title": "playbook doctor --json",
   "description": "One finding per install check, in the order doctor runs them.",
   "type": "object",
   "additionalProperties": false,
@@ -16,12 +16,12 @@
         "properties": {
           "id": {
             "type": "string",
-            "pattern": "^(pstack|plugin|cli|jstack|config|mode|check|repo:.+|check:.+)$",
-            "description": "The check: pstack, plugin, cli, jstack (a jstack on PATH that is not jstack-cli), config, mode, repo:<repo>, check:<repo>, or check when the config has no repos."
+            "pattern": "^(pstack|plugin|cli|config|mode|check|repo:.+|check:.+)$",
+            "description": "The check: pstack, plugin, cli, config, mode, repo:<repo>, check:<repo>, or check when the config has no repos."
           },
           "status": { "enum": ["ok", "fail", "info"] },
           "message": { "type": "string" },
-          "details": { "type": "array", "items": { "type": "string" }, "description": "Lines a failed jstack-cli check printed." },
+          "details": { "type": "array", "items": { "type": "string" }, "description": "Lines a failed playbook check printed." },
           "fixes": {
             "type": "array",
             "items": {
@@ -30,7 +30,7 @@
               "required": ["command", "run"],
               "properties": {
                 "command": { "type": "string" },
-                "run": { "type": "boolean", "description": "True when doctor --fix may run the command. False for advice and for commands of a harness jstack cannot drive." }
+                "run": { "type": "boolean", "description": "True when doctor --fix may run the command. False for advice and for commands of a harness playbook cannot drive." }
               }
             }
           }

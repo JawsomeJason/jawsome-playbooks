@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "jstack-cli playbook show --json",
+  "title": "playbook show --json",
   "description": "One playbook family after every member's edits are applied in topological order: parents before children, team files before user files, then by stem.",
   "type": "object",
   "additionalProperties": false,

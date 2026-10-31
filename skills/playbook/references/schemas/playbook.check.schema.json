@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "jstack-cli check --json",
+  "title": "playbook check --json",
   "description": "Validator findings for every team file and active user file, plus pstack's own checker result.",
   "type": "object",
   "additionalProperties": false,

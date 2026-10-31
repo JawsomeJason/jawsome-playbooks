@@ -1,5 +1,5 @@
 {
-  "name": "jstack",
+  "name": "jawsome-playbooks",
   "version": "0.7.0",
   "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release.",
   "author": {
@@ -9,8 +9,8 @@
   "license": "MIT",
   "skills": "./skills/",
   "interface": {
-    "displayName": "jstack",
-    "shortDescription": "Layered personal and team playbooks over pstack's poteto-mode",
+    "displayName": "jawsome-playbooks",
+    "shortDescription": "Personal and team playbooks that extend pstack's poteto-mode",
     "developerName": "Jason Featheringham",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Read", "Write"]
