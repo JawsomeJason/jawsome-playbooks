@@ -1,47 +1,99 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "jstack-cli check --json",
-  "description": "Validator findings for every active layer file, plus pstack's own checker result.",
+  "description": "Validator findings for every team file and active user file, plus pstack's own checker result.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["pstack", "problems", "info", "proposed", "pstackCheck", "recorded"],
+  "required": [
+    "pstack",
+    "problems",
+    "info",
+    "pstackCheck",
+    "recorded"
+  ],
   "properties": {
-    "pstack": { "type": ["string", "null"], "description": "pstack version checked against, from the plugin manifest or a folder named like a version. null when neither gives one." },
+    "pstack": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "pstack version checked against, from the plugin manifest or a folder named like a version. null when neither gives one."
+    },
     "problems": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "line", "message"],
-        "properties": { "path": { "type": "string" }, "line": { "type": "integer", "minimum": 1 }, "message": { "type": "string" } }
+        "required": [
+          "path",
+          "line",
+          "message"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "message": {
+            "type": "string"
+          }
+        }
       }
     },
     "info": {
       "type": "array",
-      "description": "Findings that do not fail the check, such as a handoff to a playbook that only another org's or repo's layer defines.",
+      "description": "Findings that do not fail the check, such as a file whose parent only another context defines, or a team file name without its scope word.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "line", "message"],
-        "properties": { "path": { "type": "string" }, "line": { "type": "integer", "minimum": 1 }, "message": { "type": "string" } }
-      }
-    },
-    "proposed": {
-      "type": "array",
-      "description": "Team files whose source: is proposed, at the source: line.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["path", "line"],
-        "properties": { "path": { "type": "string" }, "line": { "type": "integer", "minimum": 1 } }
+        "required": [
+          "path",
+          "line",
+          "message"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "message": {
+            "type": "string"
+          }
+        }
       }
     },
     "pstackCheck": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "lines"],
-      "properties": { "status": { "enum": ["ok", "failed", "skipped"] }, "lines": { "type": "array", "items": { "type": "string" } } }
+      "required": [
+        "status",
+        "lines"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "failed",
+            "skipped"
+          ]
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     },
-    "recorded": { "type": "boolean", "description": "True when this run wrote the checked pstack version into config.json." }
+    "recorded": {
+      "type": "boolean",
+      "description": "True when this run wrote the checked pstack version into config.json."
+    }
   }
 }

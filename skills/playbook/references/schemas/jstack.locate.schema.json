@@ -1,35 +1,130 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "jstack-cli playbook locate --json",
-  "description": "The step a quote names in the computed playbook, and the file each active layer would hold an edit to it in.",
+  "description": "The step a quote names in the computed family, the files that wrote the quoted words, and the user file an edit to them belongs in.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["playbook", "repo", "owner", "org", "pstack", "step", "text", "origin", "touched", "layers"],
+  "required": [
+    "playbook",
+    "asked",
+    "repo",
+    "owner",
+    "org",
+    "pstack",
+    "step",
+    "text",
+    "origin",
+    "kind",
+    "touched",
+    "writers",
+    "edit"
+  ],
   "$defs": {
-    "layer": { "type": "string", "enum": ["user", "org.standard", "org.overrides", "repo.standard", "repo.overrides"] }
+    "stem": {
+      "type": "string",
+      "description": "A playbook file's stem: a bundled playbook's, a team file's or a user file's."
+    },
+    "kind": {
+      "enum": [
+        "pstack",
+        "team",
+        "user"
+      ],
+      "description": "pstack for a bundled playbook, team for a file in the checkout's .agents/playbooks, user for a file in the config dir."
+    }
   },
   "properties": {
-    "playbook": { "type": "string" },
-    "repo": { "type": ["string", "null"] },
-    "owner": { "type": ["string", "null"] },
-    "org": { "type": ["string", "null"] },
-    "pstack": { "type": ["string", "null"] },
-    "step": { "type": "integer", "minimum": 1, "description": "The step's number in the computed playbook." },
-    "text": { "type": "string", "description": "The step's text after every layer." },
-    "origin": { "oneOf": [{ "const": "pstack" }, { "$ref": "#/$defs/layer" }] },
-    "touched": { "type": "array", "items": { "$ref": "#/$defs/layer" } },
-    "layers": {
+    "playbook": {
+      "type": "string",
+      "description": "The family's root."
+    },
+    "asked": {
+      "type": "string",
+      "description": "The stem the command named."
+    },
+    "repo": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "owner": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "org": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pstack": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "step": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The step's number in the computed playbook."
+    },
+    "text": {
+      "type": "string",
+      "description": "The step's text after every member's edits."
+    },
+    "origin": {
+      "$ref": "#/$defs/stem",
+      "description": "The file that wrote the step."
+    },
+    "kind": {
+      "$ref": "#/$defs/kind"
+    },
+    "touched": {
       "type": "array",
-      "description": "One entry per active layer, in cascade order.",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["layer", "path", "exists", "problem"],
-        "properties": {
-          "layer": { "$ref": "#/$defs/layer" },
-          "path": { "type": ["string", "null"], "description": "The layer's file that already edits the playbook, or the path a new one takes. Team files read through a checkout are relative to its root. null when the checkout has no org or repo for this layer." },
-          "exists": { "type": "boolean" },
-          "problem": { "type": ["string", "null"], "description": "Why an edit in this layer cannot anchor on the quote, judged against the layers below it. null when it can." }
+        "$ref": "#/$defs/stem"
+      }
+    },
+    "writers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stem"
+      },
+      "description": "The files that wrote the quoted words, less any that another writer descends from. A new edit must extend all of them to see the words."
+    },
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "exists",
+        "own",
+        "extends"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "The user file the edit goes in."
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "own": {
+          "type": "boolean",
+          "description": "True when a single user file wrote the words, so the change goes in its own text instead of an edit line."
+        },
+        "extends": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/stem"
+          },
+          "description": "The parents the file must list. null when own is true."
         }
       }
     }
