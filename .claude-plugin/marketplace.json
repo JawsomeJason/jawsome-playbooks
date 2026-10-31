@@ -9,7 +9,7 @@
     {
       "name": "jstack",
       "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release.",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "source": "./",
       "skills": ["./skills/playbook", "./skills/setup"]
     }

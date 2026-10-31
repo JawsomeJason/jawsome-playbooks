@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "jstack",
   "displayName": "jstack",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release. Muse port of the Claude Code plugin.",
   "compat": {
     "source": "native",
