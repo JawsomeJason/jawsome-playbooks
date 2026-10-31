@@ -1,6 +1,6 @@
 {
   "name": "jstack",
-  "description": "Layered personal and team playbooks over pstack-claude's poteto-mode",
+  "description": "Team and personal playbooks that extend pstack-claude's poteto-mode",
   "owner": {
     "name": "Jason Featheringham",
     "email": "jason@jawsomejason.com"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "jstack",
-      "description": "Layers personal and team playbooks over pstack's poteto-mode playbooks in a fixed cascade, and validates them against each pstack release.",
+      "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release.",
       "version": "0.6.0",
       "source": "./",
       "skills": ["./skills/playbook", "./skills/setup"]

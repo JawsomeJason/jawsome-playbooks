@@ -1,6 +1,6 @@
 ---
 name: playbook
-description: Lists, computes, and checks layered poteto-mode playbooks with the playbook command (jstack-cli is its compatibility alias). show, also spelled compute, prints one playbook with the personal, org, and repo layers applied over pstack's bundled steps in cascade order, tags each step with the layer that wrote it, and names every override. locate names the step a quote finds and the file each layer would hold an edit in. check validates every layer file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `playbook show`, when writing or editing a layer file, or after a pstack upgrade.
+description: Lists, computes, and checks poteto-mode playbooks extended by team and personal files, with the playbook command (jstack-cli is its compatibility alias). show, also spelled compute, prints one playbook family with every file that extends it applied over pstack's bundled steps in extends order, tags each step with the file that wrote it, and names every override. locate names the step a quote finds and the file an edit to it belongs in. check validates every playbook file against the installed pstack. Use when running a poteto-mode playbook through jstack, when a mode skill asks for `playbook show`, when writing or editing a playbook file, or after a pstack upgrade.
 argument-hint: "<list|show|compute|locate|extend|new|check|doctor> [playbook] [--repo <repo>]"
 compatibility: Requires Node and the pstack plugin's poteto-mode skill.
 license: MIT
@@ -8,7 +8,7 @@ license: MIT
 
 # Playbook
 
-jstack layers the operator's personal and team playbooks over pstack's bundled poteto-mode playbooks, in a fixed order where later layers win. This skill runs playbook and shows the result, so the agent copies one computed step list instead of merging layers by hand, which drops or misplaces edits.
+jstack applies the operator's personal and team playbook files over pstack's bundled poteto-mode playbooks, in the order their `extends` chains give: parents first, team files before personal ones. This skill runs playbook and shows the result, so the agent copies one computed step list instead of merging files by hand, which drops or misplaces edits.
 
 ## Run it
 
@@ -20,31 +20,32 @@ jstack layers the operator's personal and team playbooks over pstack's bundled p
    | `list` | `playbook list` |
    | `show <playbook>` (alias `compute`) | `playbook show <playbook>` |
    | `locate <playbook> <quote>` | `playbook locate <playbook> "<quote>"` |
-   | `extend <parent> <file-name> <verb> <quote>` | `playbook extend <parent> <file-name> <verb> "<quote>" --with -` |
+   | `extend <parent> [<file-name>] <verb> <quote>` | `playbook extend <parent> [<file-name>] <verb> "<quote>" --with -` |
    | `new <name>` | `playbook new <name> --when "<sentence>" --from-file -` |
    | `check` | `playbook check` |
    | `doctor` | `playbook doctor` |
 
 3. When the argument includes `--repo <repo>`, pass it through. Without it, jstack-cli reads the repo from the current directory's checkout.
-4. Print the output as it is. The operator reads the tags, the struck text, and the override list to see which layer changed a step, so rewording them hides that.
+4. Print the output as it is. The operator reads the tags, the struck text, and the override list to see which file changed a step, so rewording them hides that.
 
 Exit code 1 means a validator problem. Report each problem line to the operator. Do not guess where an edit with a broken quote belongs, because a wrong guess applies a rule to the wrong step. Exit code 2 is a usage or setup error, and the message names the fix, such as setting `JSTACK_PSTACK_DIR`. [references/cli.md](references/cli.md) lists the commands, flags, environment variables, and exit codes.
 
 ## Run a computed playbook
 
 - Copy `show`'s numbered steps into the todolist once, as poteto-mode's copy-and-apply step. Recomputing mid-task can change the list under the work.
-- When the run reaches a playbook listed under `Hands off to:`, show that playbook with playbook and run its computed steps. Its own layers change its steps, so the bundled text alone would drop them.
+- When the run reaches a playbook listed under `Hands off to:`, show that playbook with playbook and run its computed steps. Its own family changes its steps, so the bundled text alone would drop them.
 - Name every line under `Overrides:` in the reply. An override changes the bundled behavior the operator expects, so it must be visible.
 - When `pstack check-playbooks:` shows lines other than `ok`, report them as poteto-mode asks.
 
-## Write a layer file
+## Write a playbook file
 
-- Write operator layer files with `playbook extend <parent> <file-name> after|before|replace|in "<quote>" --with -` (text on stdin) and `playbook new <name> --when "<sentence>" --from-file -`, not by editing the file. They refuse a quote that names no step or several, and undo a write that adds a `check` problem. [references/cli.md](references/cli.md#extend) describes them. Team files still go through a pull request.
-- Put the file in its layer's folder and keep pstack's grammar: `extends`, `when`, and edit lines `- **After|Before|Replace|In** "quote" change`. pstack's own checker reads team files, so a new verb or key there breaks pstack. [references/layers.md](references/layers.md) gives the layout and the cascade rules.
+- Write user files with `playbook extend <parent> [<file-name>] after|before|replace|in "<quote>" --with -` (text on stdin) and `playbook new <name> --when "<sentence>" --from-file -`, not by editing the file. They refuse a quote that names no step or several, and undo a write that adds a `check` problem. Without a file name, `extend` writes `<parent>-<handle>`. `--scope org` or `--scope repo` limits where the file is active. [references/cli.md](references/cli.md#extend) describes them. Team files go through a pull request.
+- Pick the parent with `playbook locate`: it names the file that wrote the quoted words, which is the parent the new edit must extend, because a file's quotes see only what its ancestors wrote.
+- Keep pstack's grammar: `extends`, `when`, and edit lines `- **After|Before|Replace|In** "quote" change`. pstack's own checker reads team files, so a new verb or key there breaks pstack. [references/playbooks.md](references/playbooks.md) gives where files live, names, the apply order, and what `check` validates, each rule tagged with the project that provides it.
 - Quote a short, distinctive phrase from one step, such as its bold title. pstack rewrites step text between releases, and a long quote breaks on the first rewrite.
-- In team files, quote only pstack's text, and add `layer:` and `source:`. pstack's checker sees team files without the other layers, so a quote from a lower layer fails there.
+- A team file extends only bundled stems and quotes only pstack's text, and carries the org or repo word in its name. pstack's checker sees team files without personal files, so anything else fails there.
 - Run `playbook check` after every edit and after every pstack upgrade. It catches a quote that matches nothing, matches two steps, or sits outside the steps, before an agent runs the playbook.
 
 ## Keep the JSON shape
 
-`--json` output follows [jstack.compute](references/schemas/jstack.compute.schema.json), [jstack.list](references/schemas/jstack.list.schema.json), [jstack.locate](references/schemas/jstack.locate.schema.json), [jstack.check](references/schemas/jstack.check.schema.json), and [jstack.doctor](references/schemas/jstack.doctor.schema.json). When jstack-cli cannot run, produce the same shape by hand from [references/layers.md](references/layers.md), so a mode skill that reads it keeps working.
+`--json` output follows [jstack.compute](references/schemas/jstack.compute.schema.json), [jstack.list](references/schemas/jstack.list.schema.json), [jstack.locate](references/schemas/jstack.locate.schema.json), [jstack.check](references/schemas/jstack.check.schema.json), and [jstack.doctor](references/schemas/jstack.doctor.schema.json). When jstack-cli cannot run, produce the same shape by hand from [references/playbooks.md](references/playbooks.md), so a mode skill that reads it keeps working.
