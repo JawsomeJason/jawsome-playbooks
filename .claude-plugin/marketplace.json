@@ -9,7 +9,7 @@
     {
       "name": "jawsome-playbooks",
       "description": "Extends pstack's poteto-mode playbooks with team and personal playbook files, ordered by their extends chains, and validates them against each pstack release.",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "source": "./",
       "skills": ["./skills/playbook", "./skills/learn", "./skills/setup"]
     }
