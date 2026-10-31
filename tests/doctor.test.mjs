@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { BIN, CLI, PLAYBOOK, PSTACK, world } from './helpers.mjs';
+import { BIN, CLI, PLAYBOOK, PSTACK, git, world } from './helpers.mjs';
 
 const JSTACK_PLUGIN = { id: 'jstack@jstack', version: '0.1.0', scope: 'user', enabled: true };
 const JSTACK_MARKET = { name: 'jstack', source: 'github', repo: 'JawsomeJason/jstack' };
@@ -11,7 +11,7 @@ const JSTACK_MARKET = { name: 'jstack', source: 'github', repo: 'JawsomeJason/js
 /**
  * A healthy jstack install in a fake home: a stub `claude` on PATH that logs every call and lists `plugins`, jstack-cli
  * and Java's `jstack` on PATH, the mode skill linked into ~/.claude/skills, and the web checkout recorded in
- * config.json with its team link and exclude line. Tests remove one piece at a time.
+ * config.json with its team playbooks committed. Tests remove one piece at a time.
  */
 function doctorWorld({ plugins = [JSTACK_PLUGIN], marketplaces = [JSTACK_MARKET], claude = true, ...opts } = {}) {
   const w = world(opts);
@@ -43,7 +43,10 @@ esac
   writeFileSync(join(w.config, 'mode', 'tester-mode', 'SKILL.md'), '---\nname: tester-mode\n---\n');
   mkdirSync(join(w.home, '.claude', 'skills'), { recursive: true });
   symlinkSync(join(w.config, 'mode', 'tester-mode'), join(w.home, '.claude', 'skills', 'tester-mode'));
-  if (w.repo) writeFileSync(join(w.repo, '.git', 'info', 'exclude'), '# git ls-files --others --exclude-from=.git/info/exclude\n/.agents/playbooks\n');
+  if (w.repo) {
+    git(w.repo, ['add', '.agents']);
+    git(w.repo, ['commit', '-q', '-m', 'team playbooks']);
+  }
   const env = { PATH: `${bin}:/usr/bin:/bin` };
   const doctor = (args = [], { cwd = w.outside, env: extra = {} } = {}) => w.run(['doctor', ...args], { cwd, env: { ...env, ...extra } });
   const calls = () => (existsSync(log) ? readFileSync(log, 'utf8') : '');
@@ -57,7 +60,7 @@ const HEALTHY = (w) => `✓ pstack-claude 1.0.0: ${PSTACK}
 - jstack on PATH is ${w.bin}/jstack, not jstack-cli; type jstack-cli to run jstack
 ✓ config ${w.config}: config.json parses, handle tester
 ✓ mode skill ${w.config}/mode/tester-mode is linked into ${w.home}/.claude/skills
-✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/03-repos/web/01-team, and ${w.repo}/.git/info/exclude hides it
+✓ web: ${w.repo}/.agents/playbooks holds 2 team playbooks
 ✓ jstack-cli check --repo web passed
 doctor passed
 `;
@@ -73,15 +76,20 @@ test('doctor passes a healthy install, only reads, and writes nothing', () => {
   assert.equal(readFileSync(join(w.config, 'config.json'), 'utf8'), before, 'check runs pinned, so it records no pstack version');
 });
 
-/** Removes the jstack plugin, jstack-cli, the mode link, the team link, and the exclude line from a healthy world. */
+/** Removes the jstack plugin, jstack-cli, the mode link, and the team playbooks from a healthy world. */
 function brokenWorld(opts) {
   const w = doctorWorld({ plugins: [], marketplaces: [], ...opts });
   unlinkSync(join(w.bin, 'jstack-cli'));
   unlinkSync(join(w.bin, 'playbook'));
   unlinkSync(join(w.home, '.claude', 'skills', 'tester-mode'));
-  unlinkSync(join(w.repo, '.agents', 'playbooks'));
-  writeFileSync(join(w.repo, '.git', 'info', 'exclude'), '');
+  rmSync(join(w.repo, '.agents', 'playbooks'), { recursive: true });
+  dropTeamChildren(w);
   return w;
+}
+
+/** Deletes the fixture's user files that extend a team file, so a world with no team files still passes check. */
+function dropTeamChildren(w) {
+  for (const path of ['babysitting-an-acme-pr-tester.md', 'releasing-web-tester.md', 'repos/web/babysitting-an-acme-pr-web.md']) rmSync(join(w.config, 'playbooks', path));
 }
 
 test('each failing check prints the exact commands that fix it, and doctor exits 1', () => {
@@ -105,11 +113,9 @@ test('each failing check prints the exact commands that fix it, and doctor exits
 ✓ config ${w.config}: config.json parses, handle tester
 ✗ mode skill ${w.config}/mode/tester-mode is not linked into any skills folder
     ln -s ${w.config}/mode/tester-mode ${w.home}/.claude/skills/tester-mode
-✗ web: ${w.repo}/.agents/playbooks is missing; ${w.repo}/.git/info/exclude does not hide /.agents/playbooks
-    ln -s ${w.config}/03-repos/web/01-team ${w.repo}/.agents/playbooks
-    echo /.agents/playbooks >> ${w.repo}/.git/info/exclude
+- web: ${w.repo} has no .agents/playbooks, so it has no team playbooks
 ✓ jstack-cli check --repo web passed
-doctor failed: 5 problems
+doctor failed: 4 problems
 `,
   );
   assert.equal(r.status, 1);
@@ -135,7 +141,7 @@ test('doctor --json carries each finding with its status and fixes', () => {
   assert.equal(out.passed, false);
   assert.deepEqual(
     out.findings.map((f) => [f.id, f.status]),
-    [['pstack', 'ok'], ['plugin', 'fail'], ['cli', 'fail'], ['cli', 'fail'], ['jstack', 'info'], ['config', 'ok'], ['mode', 'fail'], ['repo:web', 'fail'], ['check:web', 'ok']],
+    [['pstack', 'ok'], ['plugin', 'fail'], ['cli', 'fail'], ['cli', 'fail'], ['jstack', 'info'], ['config', 'ok'], ['mode', 'fail'], ['repo:web', 'info'], ['check:web', 'ok']],
   );
   assert.deepEqual(out.findings[1], {
     id: 'plugin',
@@ -191,22 +197,39 @@ test('a missing config dir fails and names the setup command', () => {
 test('a repo with no known checkout is info, and the current checkout counts as known', () => {
   const w = doctorWorld();
   const layers = JSON.parse(readFileSync(join(w.config, 'config.json'), 'utf8'));
-  delete layers.repos;
+  layers.repos = { web: {} };
   writeFileSync(join(w.config, 'config.json'), JSON.stringify(layers));
+  dropTeamChildren(w);
   const outside = w.doctor();
   assert.ok(outside.stdout.includes('- web: no checkout known; set repos.web.checkout in config.json, or run doctor from the checkout\n'), outside.stdout);
   assert.equal(outside.status, 0);
   const inside = w.doctor([], { cwd: w.repo });
-  assert.ok(inside.stdout.includes(`✓ web: ${w.repo}/.agents/playbooks links to ${w.config}/03-repos/web/01-team`), inside.stdout);
+  assert.ok(inside.stdout.includes(`✓ web: ${w.repo}/.agents/playbooks holds 2 team playbooks`), inside.stdout);
+});
+
+test('team playbooks that git does not track are info, and a leftover link into the config dir fails', () => {
+  const w = doctorWorld();
+  git(w.repo, ['rm', '-r', '-q', '--cached', '.agents']);
+  const untracked = w.doctor();
+  assert.ok(untracked.stdout.includes(`- web: ${w.repo}/.agents/playbooks holds 2 team playbooks, but git does not track them, so teammates do not see them\n`), untracked.stdout);
+  assert.equal(untracked.status, 0);
+  rmSync(join(w.repo, '.agents', 'playbooks'), { recursive: true });
+  mkdirSync(join(w.config, 'old-team'));
+  symlinkSync(join(w.config, 'old-team'), join(w.repo, '.agents', 'playbooks'));
+  const linked = w.doctor();
+  assert.ok(linked.stdout.includes(`✗ web: ${w.repo}/.agents/playbooks links into the config dir; team playbooks are committed copies, so replace the link with them
+    rm ${w.repo}/.agents/playbooks
+`), linked.stdout);
+  assert.equal(linked.status, 1);
 });
 
 test('a failing jstack-cli check shows its lines', () => {
-  const w = doctorWorld({ files: { '01-user/broken.md': '---\nextends: babysit\n---\n\n- **In** "no such words" more.\n' } });
+  const w = doctorWorld({ files: { 'playbooks/broken.md': '---\nextends: babysit\n---\n\n- **In** "no such words" more.\n' } });
   const r = w.doctor();
   assert.ok(
     r.stdout.includes(`✗ jstack-cli check --repo web failed
-    ${w.config}/01-user/broken.md:1: missing when:
-    ${w.config}/01-user/broken.md:5: quote not found: "no such words"
+    ${w.config}/playbooks/broken.md:1: missing when:
+    ${w.config}/playbooks/broken.md:5: quote not found: "no such words"
 `),
     r.stdout,
   );
@@ -226,11 +249,11 @@ const python = spawnSync('sh', ['-c', 'command -v python3'], { encoding: 'utf8' 
 
 test('doctor --fix asks per fix on the terminal and runs only the ones answered y', { skip: python ? false : 'needs python3 for a pseudo-terminal' }, () => {
   const w = brokenWorld();
-  // Answers, in finding order: jstack plugin y, jstack-cli n, playbook n, mode link y, web links y.
+  // Answers, in finding order: jstack plugin y, jstack-cli n, playbook n, mode link y.
   const pty = 'import pty, sys; sys.exit(pty.spawn(sys.argv[1:]) >> 8)';
   const r = spawnSync(python, ['-c', pty, process.execPath, CLI, 'doctor', '--fix'], {
     cwd: w.outside,
-    input: 'y\nn\nn\ny\ny\n',
+    input: 'y\nn\nn\ny\n',
     encoding: 'utf8',
     env: { ...process.env, HOME: w.home, JSTACK_CONFIG: w.config, JSTACK_PSTACK_DIR: PSTACK, ...w.env },
   });
@@ -242,8 +265,6 @@ test('doctor --fix asks per fix on the terminal and runs only the ones answered 
   assert.equal(existsSync(join(w.home, '.local', 'bin', 'jstack-cli')), false);
   assert.equal(existsSync(join(w.home, '.local', 'bin', 'playbook')), false);
   assert.equal(readlinkSync(join(w.home, '.claude', 'skills', 'tester-mode')), join(w.config, 'mode', 'tester-mode'));
-  assert.equal(readlinkSync(join(w.repo, '.agents', 'playbooks')), join(w.config, '03-repos', 'web', '01-team'));
-  assert.equal(readFileSync(join(w.repo, '.git', 'info', 'exclude'), 'utf8'), '/.agents/playbooks\n');
   assert.equal(r.status, 1, 'the stub claude installs nothing, so the plugin check still fails after the fixes');
 });
 

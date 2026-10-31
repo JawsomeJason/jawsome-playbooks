@@ -1,5 +1,5 @@
 ---
-extends: babysit
+extends: babysitting-an-acme-pr
 when: babysitting a web pull request
 ---
 

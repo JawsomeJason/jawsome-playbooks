@@ -1,5 +1,5 @@
 ---
-extends: web-release
+extends: releasing-web
 when: releasing the web app
 ---
 

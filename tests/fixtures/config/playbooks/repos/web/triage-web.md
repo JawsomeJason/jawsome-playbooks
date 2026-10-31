@@ -1,5 +1,5 @@
 ---
-extends: triage
+extends: triage-acme
 when: triaging a web bug report
 ---
 

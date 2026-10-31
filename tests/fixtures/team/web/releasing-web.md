@@ -1,7 +1,6 @@
 ---
 extends:
 when: releasing the web app
-layer: repo.standard
 source: ruleset
 ---
 

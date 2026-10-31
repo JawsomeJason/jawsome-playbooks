@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,20 +41,15 @@ export function git(cwd, args) {
 }
 
 /**
- * A temp copy of the fixture config, plus a git checkout of `web` whose .agents/playbooks links to the config's
- * team folder. `files` writes extra config files, `links` adds symlinks, both keyed by config-relative path.
+ * A temp copy of the fixture config, plus a git checkout of `web` whose .agents/playbooks holds the team files, as
+ * committed copies: the acme org files pinned in .agents/playbooks.lock, as a sync writes them, and web's own files
+ * outside the lock. config.json records the checkout. `files` writes extra config files and `team` extra team files
+ * (null deletes one); `links` adds symlinks, keyed by config-relative path, or checkout-relative under `.agents/`.
  */
-export function world({ files = {}, links = {}, remote = 'git@example.com:acme-eng/web.git', checkout = true } = {}) {
+export function world({ files = {}, team = {}, links = {}, remote = 'git@example.com:acme-eng/web.git', checkout = true } = {}) {
   const root = tempDir();
   const config = join(root, 'config');
   cpSync(join(FIXTURES, 'config'), config, { recursive: true, verbatimSymlinks: true });
-  for (const [path, content] of Object.entries(files)) {
-    mkdirSync(dirname(join(config, path)), { recursive: true });
-    writeFileSync(join(config, path), content);
-  }
-  // Muse refuses to install a plugin that contains a symlink, so the fixtures store none and this link is made here.
-  const teamLinks = { '03-repos/web/01-team/babysit.md': '../../../02-orgs/acme/01-standard/babysit.md', ...links };
-  for (const [path, target] of Object.entries(teamLinks)) symlinkSync(target, join(config, path));
   const home = join(root, 'home');
   const outside = join(root, 'outside');
   mkdirSync(home);
@@ -68,8 +63,28 @@ export function world({ files = {}, links = {}, remote = 'git@example.com:acme-e
     writeFileSync(join(repo, 'README.md'), 'web\n');
     git(repo, ['add', '-A']);
     git(repo, ['commit', '-q', '-m', 'init']);
-    mkdirSync(join(repo, '.agents'));
-    symlinkSync(join(config, '03-repos', 'web', '01-team'), join(repo, '.agents', 'playbooks'));
+    const dir = join(repo, '.agents', 'playbooks');
+    mkdirSync(dir, { recursive: true });
+    const org = readdirSync(join(FIXTURES, 'team', 'acme'));
+    for (const name of org) cpSync(join(FIXTURES, 'team', 'acme', name), join(dir, name));
+    for (const name of readdirSync(join(FIXTURES, 'team', 'web'))) cpSync(join(FIXTURES, 'team', 'web', name), join(dir, name));
+    for (const [name, content] of Object.entries(team)) {
+      if (content === null) rmSync(join(dir, name));
+      else writeFileSync(join(dir, name), content);
+    }
+    const lock = { source: 'acme-eng/agents', commit: '0'.repeat(40), files: Object.fromEntries(org.map((name) => [name, 'sha256:0'])) };
+    writeFileSync(join(repo, '.agents', 'playbooks.lock'), `${JSON.stringify(lock, null, 2)}\n`);
+    const settings = JSON.parse(readFileSync(join(config, 'config.json'), 'utf8'));
+    writeFileSync(join(config, 'config.json'), `${JSON.stringify({ ...settings, repos: { web: { checkout: repo } } }, null, 2)}\n`);
+  }
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(dirname(join(config, path)), { recursive: true });
+    writeFileSync(join(config, path), content);
+  }
+  for (const [path, target] of Object.entries(links)) {
+    const at = path.startsWith('.agents/') ? join(repo, path) : join(config, path);
+    mkdirSync(dirname(at), { recursive: true });
+    symlinkSync(target, at);
   }
   const run = (args, { cwd = repo ?? outside, env = {} } = {}) => {
     const r = spawnSync(process.execPath, [CLI, ...args], {
