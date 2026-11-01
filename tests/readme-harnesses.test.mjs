@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-const README = join(dirname(fileURLToPath(import.meta.url)), '..', 'README.md');
+const README = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'install.md');
 const INSTALL_STEPS = 5;
 
 function pstackReadmePath() {

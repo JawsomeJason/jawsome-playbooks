@@ -1287,7 +1287,7 @@ function runList(ctx, opts) {
 }
 
 const SCRIPT = fileURLToPath(import.meta.url);
-const README = fileURLToPath(new URL('../../../README.md', import.meta.url));
+const README = fileURLToPath(new URL('../../../docs/install.md', import.meta.url));
 const SELF_BIN = fileURLToPath(new URL('../../../bin/playbook', import.meta.url));
 const MARKS = { ok: '✓', fail: '✗', info: '-' };
 const PLUGIN = 'jawsome-playbooks';
